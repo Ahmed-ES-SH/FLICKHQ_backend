@@ -1,11 +1,18 @@
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 import { RequestWithUser } from '../types/request.interface';
+import { User } from '../../user/schema/user.schema';
+
+type UserKey = keyof User;
 
 export const GetUser = createParamDecorator(
-  (data: string | undefined, ctx: ExecutionContext): any => {
+  (data: UserKey | undefined, ctx: ExecutionContext): User | User[UserKey] => {
     const request = ctx.switchToHttp().getRequest<RequestWithUser>();
     const user = request.user;
 
-    return data ? user?.[data] : user;
+    if (!user) {
+      return undefined as User[UserKey];
+    }
+
+    return data ? user[data] : user;
   },
 );

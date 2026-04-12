@@ -1,7 +1,7 @@
 import { MailerService } from '@nestjs-modules/mailer';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { User } from 'src/user/schema/user.schema';
+import { User } from '../user/schema/user.schema';
 import * as crypto from 'crypto';
 
 @Injectable()

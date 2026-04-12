@@ -11,6 +11,17 @@ import { AuthService } from '../auth.service';
 import { Reflector } from '@nestjs/core';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 
+const COOKIE_NAME = 'sanad_auth_token';
+
+export interface RequestWithToken extends Request {
+  cookies: Record<string, string>;
+  user: {
+    id: string;
+    email: string;
+    role: string;
+  };
+}
+
 @Injectable()
 export class AuthGuard implements CanActivate {
   constructor(
@@ -26,14 +37,12 @@ export class AuthGuard implements CanActivate {
     ]);
     if (isPublic) return true;
 
-    const request = context.switchToHttp().getRequest<Request>();
-    const authHeader = request.headers.authorization;
+    const request = context.switchToHttp().getRequest<RequestWithToken>();
+    const token: string | undefined = request.cookies?.[COOKIE_NAME];
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      throw new UnauthorizedException('Please provide a valid bearer token');
+    if (!token) {
+      throw new UnauthorizedException('Authentication cookie not found');
     }
-
-    const token = authHeader.split(' ')[1];
 
     try {
       const decodedToken = await this.jwtService.verifyAsync<{
@@ -51,8 +60,8 @@ export class AuthGuard implements CanActivate {
 
       return true;
     } catch (error) {
+      if (error instanceof UnauthorizedException) throw error;
       throw new UnauthorizedException('Invalid or expired token');
-      console.log(error);
     }
   }
 }

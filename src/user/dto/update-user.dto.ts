@@ -1,12 +1,12 @@
 import {
-  IsBoolean,
   IsEmail,
   IsEnum,
   IsOptional,
   IsString,
   MinLength,
 } from 'class-validator';
-import { UserRoleEnum } from 'src/auth/types/UserRoleEnum';
+import { UserRoleEnum } from '../../auth/types/UserRoleEnum';
+import { StatusEnum } from '../../auth/types/StatusEnum';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class UpdateUserDto {
@@ -36,8 +36,12 @@ export class UpdateUserDto {
   @ApiProperty()
   password?: string;
 
-  @IsBoolean()
   @IsOptional()
   @ApiProperty()
   isEmailVerified?: boolean;
+
+  @IsEnum(StatusEnum)
+  @IsOptional()
+  @ApiProperty()
+  status?: StatusEnum;
 }

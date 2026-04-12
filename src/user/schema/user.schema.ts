@@ -1,4 +1,5 @@
-import { UserRoleEnum } from 'src/auth/types/UserRoleEnum';
+import { UserRoleEnum } from '../../auth/types/UserRoleEnum';
+import { StatusEnum } from '../../auth/types/StatusEnum';
 import {
   Entity,
   PrimaryGeneratedColumn,
@@ -26,6 +27,9 @@ export class User {
 
   @Column({ type: 'enum', enum: UserRoleEnum, default: UserRoleEnum.USER })
   role: UserRoleEnum;
+
+  @Column({ type: 'enum', enum: StatusEnum, default: StatusEnum.ACTIVE })
+  status: StatusEnum;
 
   @Column({ nullable: true, unique: true })
   googleId?: string;

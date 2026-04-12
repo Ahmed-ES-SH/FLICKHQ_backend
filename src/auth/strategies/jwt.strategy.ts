@@ -1,8 +1,13 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
-import { Strategy, ExtractJwt } from 'passport-jwt';
+import { Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
-import { UserService } from 'src/user/user.service';
+import { UserService } from '../../user/user.service';
+import { RequestWithToken } from '../guards/auth.guard';
+
+const cookieExtractor = (req: RequestWithToken): string | null => {
+  return req?.cookies?.['sanad_auth_token'] ?? null;
+};
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -11,9 +16,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     private readonly usersService: UserService,
   ) {
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      jwtFromRequest: cookieExtractor,
       ignoreExpiration: false,
       secretOrKey: configService.get<string>('JWT_SECRET')!,
+      passReqToCallback: false,
     });
   }
 

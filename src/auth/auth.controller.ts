@@ -10,17 +10,17 @@ import {
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import { User } from 'src/user/schema/user.schema';
 
 import type { Response } from 'express';
 import { logoutDTO } from './dto/logout.dto';
 import { GetUser } from './decorators/current-user.decorator';
+import { User } from '../user/schema/user.schema';
 
 /**
  * Controller responsible for handling authentication-related requests.
- * Includes Login, Email Verification, Password Reset, and Google OAuth.
+ * Includes Login, Email Verification, Password Reset, and Google OAuth-.
  */
-@Controller('api/auth')
+@Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 

@@ -3,18 +3,19 @@ import * as crypto from 'crypto';
 
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   RequestTimeoutException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { LoginDto } from './dto/login.dto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { User } from 'src/user/schema/user.schema';
+import { User } from '../user/schema/user.schema';
 import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
-import { UserService } from 'src/user/user.service';
+import { UserService } from '../user/user.service';
 import { validateGoogleUserType } from './types/validateGoogleUser';
-import { MailService } from 'src/mail/mail.service';
+import { MailService } from '../mail/mail.service';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { verifyRestTokenDTO } from './dto/verify-rest-password-token.dto';
 import { sendResetPasswordDTO } from './dto/send-rest-password.dto';
@@ -51,7 +52,7 @@ export class AuthService {
 
     if (!user.isEmailVerified) {
       await this.sendVerificationEmail(user);
-      return { message: 'you need to verify your email first' };
+      throw new ForbiddenException('you need to verify your email first');
     }
 
     const payload = { id: user.id, email: user.email, role: user.role };
@@ -152,11 +153,7 @@ export class AuthService {
     if (user?.isEmailVerified)
       throw new BadRequestException('The user is already verified');
 
-    if (
-      !user ||
-      !user.emailVerificationTokenExpiry ||
-      user.emailVerificationTokenExpiry < new Date()
-    ) {
+    if (!user) {
       throw new BadRequestException('Invalid or expired token');
     }
 
@@ -218,9 +215,6 @@ export class AuthService {
 
     const payload = { id: user?.id, email: user?.email, role: user?.role };
     const access_token = await this.jwtService.signAsync(payload);
-
-    console.log('Google User Email:', email);
-    console.log('Database Found User ID:', user?.id);
 
     return { access_token, user };
   }
