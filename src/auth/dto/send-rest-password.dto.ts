@@ -5,5 +5,5 @@ export class sendResetPasswordDTO {
   @IsString()
   @IsNotEmpty()
   @ApiProperty()
-  email: string;
+  email!: string;
 }

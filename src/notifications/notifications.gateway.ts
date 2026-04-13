@@ -20,6 +20,13 @@ export enum WsEvent {
   NOTIFICATION_READ_ALL = 'notification:read_all',
   NOTIFICATION_COUNT = 'notification:count',
   NOTIFICATION_DELETE = 'notification:delete',
+  PAYMENT_STATUS = 'payment:status',
+}
+
+export interface PaymentStatusPayload {
+  status: 'succeeded' | 'failed' | 'refunded';
+  amount: number;
+  description: string;
 }
 
 export interface ClientToServerEvents {
@@ -33,6 +40,7 @@ export interface ServerToClientEvents {
   [WsEvent.NOTIFICATION_READ_ALL]: () => void;
   [WsEvent.NOTIFICATION_COUNT]: (payload: { unreadCount: number }) => void;
   [WsEvent.NOTIFICATION_DELETE]: (payload: { notificationId: string }) => void;
+  [WsEvent.PAYMENT_STATUS]: (payload: PaymentStatusPayload) => void;
 }
 
 export interface InterServerEvents {}
@@ -111,6 +119,11 @@ export class NotificationsGateway
     this.server.to(`user:${userId}`).emit(WsEvent.NOTIFICATION_DELETE, {
       notificationId,
     });
+  }
+
+  // Emit payment status update to specific user
+  emitPaymentStatus(userId: string, payload: PaymentStatusPayload): void {
+    this.server.to(`user:${userId}`).emit(WsEvent.PAYMENT_STATUS, payload);
   }
 
   // Broadcast to all connected clients

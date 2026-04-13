@@ -54,4 +54,10 @@ export class User {
 
   @Column({ type: 'timestamp', nullable: true })
   passwordResetTokenExpiry?: Date | null;
+
+  @Column({ type: 'varchar', nullable: true, name: 'stripe_customer_id' })
+  stripeCustomerId?: string | null;
+
+  @Column({ default: false, name: 'is_premium' })
+  isPremium: boolean;
 }

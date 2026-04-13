@@ -8,6 +8,7 @@ import {
   Delete,
   UseGuards,
   Query,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -64,8 +65,8 @@ export class UserController {
    * @returns {Promise<User | null>}
    */
   @Get(':id')
-  findOne(@Param('id') id: string): Promise<User | null> {
-    return this.userService.findOne(+id);
+  findOne(@Param('id', ParseIntPipe) id: number): Promise<User | null> {
+    return this.userService.findOne(id);
   }
 
   /**
@@ -76,10 +77,10 @@ export class UserController {
    */
   @Patch(':id')
   update(
-    @Param('id') id: string,
+    @Param('id', ParseIntPipe) id: number,
     @Body() updateUserDto: UpdateUserDto,
   ): Promise<User> {
-    return this.userService.update(+id, updateUserDto);
+    return this.userService.update(id, updateUserDto);
   }
 
   /**
@@ -88,7 +89,7 @@ export class UserController {
    * @returns {Promise<User>}
    */
   @Delete(':id')
-  remove(@Param('id') id: string): Promise<User> {
-    return this.userService.remove(+id);
+  remove(@Param('id', ParseIntPipe) id: number): Promise<User> {
+    return this.userService.remove(id);
   }
 }

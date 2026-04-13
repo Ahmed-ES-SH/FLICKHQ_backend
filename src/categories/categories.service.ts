@@ -91,9 +91,13 @@ export class CategoriesService {
   /**
    * Get all categories with pagination and filters
    */
-  async getAll(
-    filters: FilterCategoriesQueryDto,
-  ): Promise<{ data: Category[]; total: number; page: number; limit: number }> {
+  async getAll(filters: FilterCategoriesQueryDto): Promise<{
+    data: Category[];
+    total: number;
+    totalPages: number;
+    page: number;
+    limit: number;
+  }> {
     const {
       page = 1,
       limit = 10,
@@ -120,7 +124,9 @@ export class CategoriesService {
 
     const [data, total] = await queryBuilder.getManyAndCount();
 
-    return { data, total, page, limit };
+    const totalPages = Math.ceil(total / limit);
+
+    return { data, total, page, limit, totalPages };
   }
 
   /**

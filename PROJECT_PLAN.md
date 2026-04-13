@@ -25,15 +25,17 @@
 ## 1. Project Overview
 
 ### System Features
-| Feature | Type | Priority |
-|---|---|---|
-| Watchlist | REST + Realtime | High |
-| Watched List | REST + Realtime | High |
-| Favorites | REST + Realtime | High |
-| Real-time Notifications | Socket.IO | High |
-| Stripe Payment Integration | REST + Webhooks | Medium |
+
+| Feature                    | Type            | Priority |
+| -------------------------- | --------------- | -------- |
+| Watchlist                  | REST + Realtime | High     |
+| Watched List               | REST + Realtime | High     |
+| Favorites                  | REST + Realtime | High     |
+| Real-time Notifications    | Socket.IO       | High     |
+| Stripe Payment Integration | REST + Webhooks | Medium   |
 
 ### NestJS Module Structure
+
 ```
 src/
 ├── app.module.ts
@@ -67,6 +69,7 @@ src/
 ### 2.1 Tables & Relationships
 
 #### `users`
+
 ```sql
 CREATE TABLE users (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -84,6 +87,7 @@ CREATE INDEX idx_users_stripe_customer_id ON users(stripe_customer_id);
 ```
 
 #### `movies`
+
 ```sql
 CREATE TABLE movies (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -105,6 +109,7 @@ CREATE INDEX idx_movies_release_date ON movies(release_date DESC);
 ```
 
 #### `user_lists` (unified table for watchlist / watched / favorites)
+
 ```sql
 CREATE TYPE list_type AS ENUM ('watchlist', 'watched', 'favorites');
 
@@ -126,6 +131,7 @@ CREATE INDEX idx_user_lists_created_at     ON user_lists(user_id, list_type, cre
 ```
 
 #### `notifications`
+
 ```sql
 CREATE TYPE notification_type AS ENUM (
   'movie_added_to_watchlist',
@@ -152,6 +158,7 @@ CREATE INDEX idx_notifications_created_at    ON notifications(user_id, created_a
 ```
 
 #### `payments`
+
 ```sql
 CREATE TYPE payment_status AS ENUM ('pending', 'succeeded', 'failed', 'refunded');
 
@@ -191,6 +198,7 @@ CREATE INDEX idx_payments_idempotency_key        ON payments(idempotency_key);
 ## 3. API Architecture
 
 ### 3.1 Conventions
+
 - Base path: `/api/v1`
 - JSON request/response everywhere
 - HTTP status codes strictly followed
@@ -200,9 +208,7 @@ CREATE INDEX idx_payments_idempotency_key        ON payments(idempotency_key);
 {
   "statusCode": 400,
   "message": "Validation failed",
-  "errors": [
-    { "field": "movieId", "message": "movieId must be a UUID" }
-  ],
+  "errors": [{ "field": "movieId", "message": "movieId must be a UUID" }],
   "timestamp": "2024-01-15T10:30:00.000Z",
   "path": "/api/v1/watchlist"
 }
@@ -224,27 +230,27 @@ CREATE INDEX idx_payments_idempotency_key        ON payments(idempotency_key);
 
 ### 3.2 Endpoint Summary
 
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/api/v1/movies` | Browse/search movies |
-| GET | `/api/v1/movies/:id` | Movie detail |
-| GET | `/api/v1/watchlist` | Get user's watchlist |
-| POST | `/api/v1/watchlist` | Add to watchlist |
-| DELETE | `/api/v1/watchlist/:movieId` | Remove from watchlist |
-| GET | `/api/v1/watched` | Get watched list |
-| POST | `/api/v1/watched` | Mark as watched |
-| PATCH | `/api/v1/watched/:movieId` | Update rating |
-| DELETE | `/api/v1/watched/:movieId` | Remove from watched |
-| GET | `/api/v1/favorites` | Get favorites |
-| POST | `/api/v1/favorites` | Add to favorites |
-| DELETE | `/api/v1/favorites/:movieId` | Remove from favorites |
-| GET | `/api/v1/notifications` | Get notifications (paginated) |
-| PATCH | `/api/v1/notifications/:id/read` | Mark one as read |
-| PATCH | `/api/v1/notifications/read-all` | Mark all as read |
-| GET | `/api/v1/notifications/unread-count` | Unread count |
-| POST | `/api/v1/payments/intent` | Create payment intent |
-| POST | `/api/v1/payments/webhook` | Stripe webhook |
-| GET | `/api/v1/payments/history` | Payment history |
+| Method | Endpoint                             | Description                   |
+| ------ | ------------------------------------ | ----------------------------- |
+| GET    | `/api/v1/movies`                     | Browse/search movies          |
+| GET    | `/api/v1/movies/:id`                 | Movie detail                  |
+| GET    | `/api/v1/watchlist`                  | Get user's watchlist          |
+| POST   | `/api/v1/watchlist`                  | Add to watchlist              |
+| DELETE | `/api/v1/watchlist/:movieId`         | Remove from watchlist         |
+| GET    | `/api/v1/watched`                    | Get watched list              |
+| POST   | `/api/v1/watched`                    | Mark as watched               |
+| PATCH  | `/api/v1/watched/:movieId`           | Update rating                 |
+| DELETE | `/api/v1/watched/:movieId`           | Remove from watched           |
+| GET    | `/api/v1/favorites`                  | Get favorites                 |
+| POST   | `/api/v1/favorites`                  | Add to favorites              |
+| DELETE | `/api/v1/favorites/:movieId`         | Remove from favorites         |
+| GET    | `/api/v1/notifications`              | Get notifications (paginated) |
+| PATCH  | `/api/v1/notifications/:id/read`     | Mark one as read              |
+| PATCH  | `/api/v1/notifications/read-all`     | Mark all as read              |
+| GET    | `/api/v1/notifications/unread-count` | Unread count                  |
+| POST   | `/api/v1/payments/intent`            | Create payment intent         |
+| POST   | `/api/v1/payments/webhook`           | Stripe webhook                |
+| GET    | `/api/v1/payments/history`           | Payment history               |
 
 ---
 
@@ -256,7 +262,7 @@ CREATE INDEX idx_payments_idempotency_key        ON payments(idempotency_key);
 // src/modules/socket/socket.gateway.ts
 @WebSocketGateway({
   cors: { origin: process.env.FRONTEND_URL, credentials: true },
-  transports: ['websocket'],  // avoid long-polling to save RAM
+  transports: ['websocket'], // avoid long-polling to save RAM
   pingInterval: 25000,
   pingTimeout: 60000,
 })
@@ -265,8 +271,11 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   handleConnection(client: Socket) {
     const userId = this.extractUserIdFromCookie(client);
-    if (!userId) { client.disconnect(); return; }
-    client.join(`user:${userId}`);    // user-specific room
+    if (!userId) {
+      client.disconnect();
+      return;
+    }
+    client.join(`user:${userId}`); // user-specific room
   }
 
   handleDisconnect(client: Socket) {
@@ -279,17 +288,17 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
 **Server → Client (emit):**
 
-| Event | Payload | Trigger |
-|---|---|---|
-| `notification:new` | `{ id, type, title, body, metadata, createdAt }` | Any new notification |
-| `notification:unread_count` | `{ count: number }` | After any read/unread change |
-| `list:updated` | `{ listType, action, movieId }` | Add/remove from any list |
-| `payment:status` | `{ status, amount, description }` | Payment webhook received |
+| Event                       | Payload                                          | Trigger                      |
+| --------------------------- | ------------------------------------------------ | ---------------------------- |
+| `notification:new`          | `{ id, type, title, body, metadata, createdAt }` | Any new notification         |
+| `notification:unread_count` | `{ count: number }`                              | After any read/unread change |
+| `list:updated`              | `{ listType, action, movieId }`                  | Add/remove from any list     |
+| `payment:status`            | `{ status, amount, description }`                | Payment webhook received     |
 
 **Client → Server (listen):**
 
-| Event | Description |
-|---|---|
+| Event                    | Description                                 |
+| ------------------------ | ------------------------------------------- |
 | `notification:mark_read` | Client marks a notification read via socket |
 
 ### 4.3 Efficient Event Emission
@@ -367,6 +376,7 @@ async handleWebhook(
 ```
 
 **Webhook events handled:**
+
 - `payment_intent.succeeded` → update payment to `succeeded`, set `is_premium = true`, emit socket
 - `payment_intent.payment_failed` → update to `failed`, emit socket
 - `charge.refunded` → update to `refunded`, optionally revoke premium
@@ -402,12 +412,17 @@ export class JobsService {
   @Cron(CronExpression.EVERY_HOUR)
   async reconcilePendingPayments() {
     const stale = await this.paymentRepo.find({
-      where: { status: 'pending', createdAt: LessThan(subHours(new Date(), 1)) },
+      where: {
+        status: 'pending',
+        createdAt: LessThan(subHours(new Date(), 1)),
+      },
     });
     for (const p of stale) {
-      const intent = await this.stripe.paymentIntents.retrieve(p.stripePaymentIntent);
+      const intent = await this.stripe.paymentIntents.retrieve(
+        p.stripePaymentIntent,
+      );
       if (intent.status === 'succeeded') await this.markSucceeded(p);
-      if (intent.status === 'canceled')  await this.markFailed(p);
+      if (intent.status === 'canceled') await this.markFailed(p);
     }
   }
 }
@@ -415,11 +430,11 @@ export class JobsService {
 
 **Jobs list:**
 
-| Job | Frequency | Purpose |
-|---|---|---|
-| `cleanOldNotifications` | Daily midnight | Prevent notifications table bloat |
-| `reconcilePendingPayments` | Every hour | Catch missed webhooks |
-| `pruneOrphanMovies` | Weekly | Remove movies not in any list |
+| Job                        | Frequency      | Purpose                           |
+| -------------------------- | -------------- | --------------------------------- |
+| `cleanOldNotifications`    | Daily midnight | Prevent notifications table bloat |
+| `reconcilePendingPayments` | Every hour     | Catch missed webhooks             |
+| `pruneOrphanMovies`        | Weekly         | Remove movies not in any list     |
 
 ---
 
@@ -428,14 +443,17 @@ export class JobsService {
 ### 7.1 Pagination Contract
 
 **Offset/Limit (default for lists):**
+
 ```
 GET /api/v1/watchlist?page=1&limit=20
 ```
 
 **Cursor-based (for notifications feed — avoids offset on large tables):**
+
 ```
 GET /api/v1/notifications?cursor=2024-01-10T12:00:00Z&limit=20
 ```
+
 ```sql
 WHERE user_id = $1 AND created_at < $2  -- cursor = last item's created_at
 ORDER BY created_at DESC
@@ -451,7 +469,10 @@ const items = await this.userListRepo
   .select(['ul.id', 'ul.createdAt', 'ul.rating'])
   .addSelect(['m.tmdbId', 'm.title', 'm.posterPath', 'm.voteAverage'])
   .innerJoin('ul.movie', 'm')
-  .where('ul.userId = :userId AND ul.listType = :listType', { userId, listType })
+  .where('ul.userId = :userId AND ul.listType = :listType', {
+    userId,
+    listType,
+  })
   .orderBy('ul.createdAt', 'DESC')
   .skip((page - 1) * limit)
   .take(limit)
@@ -471,7 +492,11 @@ for (const item of lists) {
 const lists = await this.userListRepo.find({
   where: { userId, listType },
   relations: ['movie'],
-  select: { id: true, createdAt: true, movie: { id: true, title: true, posterPath: true } },
+  select: {
+    id: true,
+    createdAt: true,
+    movie: { id: true, title: true, posterPath: true },
+  },
 });
 ```
 
@@ -484,13 +509,13 @@ TypeOrmModule.forRoot({
   url: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
   extra: {
-    max: 5,           // low cap to avoid OOM
+    max: 5, // low cap to avoid OOM
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 5000,
   },
   synchronize: false,
   migrationsRun: true,
-})
+});
 ```
 
 ---
@@ -521,12 +546,14 @@ createPaymentIntent() {}
 
 ```typescript
 // main.ts
-app.useGlobalPipes(new ValidationPipe({
-  whitelist: true,           // strip unknown fields
-  forbidNonWhitelisted: true,
-  transform: true,
-  transformOptions: { enableImplicitConversion: true },
-}));
+app.useGlobalPipes(
+  new ValidationPipe({
+    whitelist: true, // strip unknown fields
+    forbidNonWhitelisted: true,
+    transform: true,
+    transformOptions: { enableImplicitConversion: true },
+  }),
+);
 ```
 
 ### 8.3 Security Headers
@@ -618,11 +645,11 @@ async keepAlive() {
 
 ### 9.6 Pre-deployment Checklist
 
-- [ ] All migrations run (`npm run migration:run`)
-- [ ] Indexes verified in production DB
+- [x] All migrations run (`npm run migration:run`)
+- [x] Indexes verified in production DB
 - [ ] Stripe webhook URL registered in Stripe dashboard
-- [ ] CORS origin set to exact production frontend URL
-- [ ] `synchronize: false` in TypeORM config
+- [x] CORS origin set to exact production frontend URL
+- [x] `synchronize: false` in TypeORM config
 - [ ] `NODE_ENV=production` set
 - [ ] `--max-old-space-size` flag set
 - [ ] Raw body middleware applied before Stripe webhook route
@@ -635,11 +662,11 @@ async keepAlive() {
 
 ---
 
-### 🏁 Milestone 1 — Foundation & Core Infrastructure
+### 🏁 Milestone 1 — Foundation & Core Infrastructure ✅ COMPLETED
 
 ---
 
-#### Phase 1.1 — Project Bootstrap & Database Setup
+#### Phase 1.1 — Project Bootstrap & Database Setup ✅ DONE
 
 **Objective:** Initialize NestJS project with all required dependencies, configure database connection, and run initial migrations.
 
@@ -648,23 +675,25 @@ async keepAlive() {
 **Dependencies:** PostgreSQL instance available
 
 **Tasks:**
-1. Initialize NestJS project (`nest new`)
-2. Install dependencies: `@nestjs/typeorm`, `pg`, `@nestjs/config`, `@nestjs/throttler`, `@nestjs/schedule`, `class-validator`, `class-transformer`, `helmet`, `stripe`, `@nestjs/websockets`, `socket.io`
-3. Configure `ConfigModule` with `.env` validation using `Joi`
-4. Configure `TypeOrmModule` with connection pool limits
-5. Create initial migration with all tables
-6. Set up global `ValidationPipe`, `HttpExceptionFilter`, `ResponseInterceptor`
-7. Set up `ScheduleModule`
-8. Add `/health` endpoint
+
+1. Initialize NestJS project (`nest new`) ✅
+2. Install dependencies: `@nestjs/typeorm`, `pg`, `@nestjs/config`, `@nestjs/throttler`, `@nestjs/schedule`, `class-validator`, `class-transformer`, `helmet`, `stripe`, `@nestjs/websockets`, `socket.io` ✅
+3. Configure `ConfigModule` with `.env` validation using `Joi` ✅
+4. Configure `TypeOrmModule` with connection pool limits ✅
+5. Create initial migration with all tables ✅
+6. Set up global `ValidationPipe`, `HttpExceptionFilter`, `ResponseInterceptor` ✅
+7. Set up `ScheduleModule` ✅
+8. Add `/health` endpoint ✅
 
 **Deliverables:**
-- Running NestJS app connecting to PostgreSQL
-- All tables created via migration
-- Global middleware and pipes configured
+
+- Running NestJS app connecting to PostgreSQL ✅
+- All tables created via migration ✅
+- Global middleware and pipes configured ✅
 
 ---
 
-#### Phase 1.2 — Movies Module
+#### Phase 1.2 — Movies Module ✅ DONE
 
 **Objective:** Allow searching and retrieving movie data (sourced from TMDB API or pre-seeded). Upsert movies to local DB when users interact with them.
 
@@ -673,69 +702,24 @@ async keepAlive() {
 **Dependencies:** Phase 1.1
 
 **Tasks:**
-1. Create `MoviesModule` with `MoviesController`, `MoviesService`, `Movie` entity
-2. Implement TMDB proxy (fetch from TMDB, upsert into local `movies` table)
-3. Implement movie upsert helper used by list modules
-4. Add full-text search index on `title`
 
-**API Design:**
-
-```
-GET /api/v1/movies?query=inception&page=1&limit=20
-```
-
-Response:
-```json
-{
-  "data": [
-    {
-      "id": "uuid",
-      "tmdbId": 27205,
-      "title": "Inception",
-      "overview": "A thief who steals...",
-      "posterPath": "/poster.jpg",
-      "releaseDate": "2010-07-16",
-      "voteAverage": 8.4,
-      "genres": ["Action", "Sci-Fi"]
-    }
-  ],
-  "meta": { "total": 1, "page": 1, "limit": 20, "totalPages": 1 }
-}
-```
-
-```
-GET /api/v1/movies/:id
-```
-
-Response: full movie object including `runtime`.
-
-**Validation (DTO):**
-```typescript
-export class MovieQueryDto {
-  @IsOptional() @IsString() query?: string;
-  @IsOptional() @IsInt() @Min(1) @Type(() => Number) page: number = 1;
-  @IsOptional() @IsInt() @Min(1) @Max(50) @Type(() => Number) limit: number = 20;
-}
-```
-
-**Frontend Integration Plan:**
-- Fetch movie list on mount and on search input debounce (300ms).
-- Use React Query: `useQuery(['movies', query, page], fetchMovies)`.
-- On movie detail page, call `GET /api/v1/movies/:id`.
-- Errors: show "Movie not found" on 404; show generic error toast on 500.
-- Pagination: render page controls from `meta.totalPages`.
+1. Create `MoviesModule` with `MoviesController`, `MoviesService`, `Movie` entity ✅
+2. Implement TMDB proxy (fetch from TMDB, upsert into local `movies` table) ✅
+3. Implement movie upsert helper used by list modules ✅
+4. Add full-text search index on `title` ✅
 
 **Deliverables:**
-- Movie browse + detail endpoints functional
-- TMDB upsert helper reusable across modules
+
+- Movie browse + detail endpoints functional ✅
+- TMDB upsert helper reusable across modules ✅
 
 ---
 
-### 🏁 Milestone 2 — User Lists (Watchlist, Watched, Favorites)
+### 🏁 Milestone 2 — User Lists (Watchlist, Watched, Favorites) ✅ COMPLETED
 
 ---
 
-#### Phase 2.1 — Watchlist Module
+#### Phase 2.1 — Watchlist Module ✅ DONE
 
 **Objective:** Allow authenticated users to add/remove movies from their watchlist and retrieve it paginated.
 
@@ -744,11 +728,12 @@ export class MovieQueryDto {
 **Dependencies:** Phase 1.2, JWT Auth (pre-existing)
 
 **Tasks:**
-1. Create `WatchlistModule` with entity referencing `user_lists` (filter by `list_type = 'watchlist'`)
-2. Implement `GET`, `POST`, `DELETE` endpoints
-3. On `POST`: upsert movie to `movies` table first, then insert into `user_lists`
-4. Emit `list:updated` socket event after successful add/remove
-5. Create notification record + emit `notification:new` on add
+
+1. Create `WatchlistModule` with entity referencing `user_lists` (filter by `list_type = 'watchlist'`) ✅
+2. Implement `GET`, `POST`, `DELETE` endpoints ✅
+3. On `POST`: upsert movie to `movies` table first, then insert into `user_lists` ✅
+4. Emit `list:updated` socket event after successful add/remove ✅
+5. Create notification record + emit `notification:new` on add ✅
 
 **API Design:**
 
@@ -758,12 +743,17 @@ Authorization: Cookie (JWT)
 ```
 
 Response:
+
 ```json
 {
   "data": [
     {
       "id": "uuid",
-      "movie": { "tmdbId": 27205, "title": "Inception", "posterPath": "/img.jpg" },
+      "movie": {
+        "tmdbId": 27205,
+        "title": "Inception",
+        "posterPath": "/img.jpg"
+      },
       "createdAt": "2024-01-10T10:00:00Z"
     }
   ],
@@ -777,6 +767,7 @@ Body: { "tmdbId": 27205, "title": "Inception", "posterPath": "/img.jpg", ... }
 ```
 
 Response `201`:
+
 ```json
 { "id": "uuid", "movieId": "uuid", "createdAt": "..." }
 ```
@@ -786,6 +777,7 @@ DELETE /api/v1/watchlist/:movieId   → 204 No Content
 ```
 
 **Validation (DTO):**
+
 ```typescript
 export class AddToListDto {
   @IsInt() @IsPositive() tmdbId: number;
@@ -799,15 +791,18 @@ export class AddToListDto {
 ```
 
 **Business Logic:**
+
 - Check for duplicate before inserting (`UNIQUE(user_id, movie_id, list_type)` handles DB-level; catch unique constraint error and return 409).
 - On successful add: create notification + emit socket.
 - `movieId` path param is the internal UUID (not tmdbId).
 
 **Socket Events emitted:**
+
 - `list:updated` → `{ listType: 'watchlist', action: 'added' | 'removed', movieId }`
 - `notification:new` → `{ id, type: 'movie_added_to_watchlist', title: 'Added to Watchlist', body: 'Inception was added to your watchlist', metadata: { tmdbId } }`
 
 **Frontend Integration Plan:**
+
 - Use React Query with `invalidateQueries(['watchlist'])` after mutation.
 - Optimistic update: immediately add item to list, rollback on error.
 - Listen to `list:updated` via Socket.IO → call `queryClient.invalidateQueries(['watchlist'])`.
@@ -816,13 +811,14 @@ export class AddToListDto {
 - Debounce remove button to prevent double-click double-delete.
 
 **Deliverables:**
+
 - Watchlist CRUD endpoints
 - Socket emission on changes
 - Notification creation on add
 
 ---
 
-#### Phase 2.2 — Watched List Module
+#### Phase 2.2 — Watched List Module ✅ DONE
 
 **Objective:** Allow users to mark movies as watched, optionally rate them (1–10), and retrieve their watched history.
 
@@ -831,11 +827,12 @@ export class AddToListDto {
 **Dependencies:** Phase 2.1
 
 **Tasks:**
-1. Reuse `user_lists` table with `list_type = 'watched'`
-2. `POST /watched` — upsert movie + insert list record with `watched_at = NOW()`
-3. `PATCH /watched/:movieId` — update `rating` field
-4. `DELETE /watched/:movieId`
-5. Move from watchlist to watched (if exists in watchlist, remove it + add to watched in a transaction)
+
+1. Reuse `user_lists` table with `list_type = 'watched'` ✅
+2. `POST /watched` — upsert movie + insert list record with `watched_at = NOW()` ✅
+3. `PATCH /watched/:movieId` — update `rating` field ✅
+4. `DELETE /watched/:movieId` ✅
+5. Move from watchlist to watched (if exists in watchlist, remove it + add to watched in a transaction) ✅
 
 **API Design:**
 
@@ -845,6 +842,7 @@ Body: { "tmdbId": 27205, "title": "Inception", ..., "rating": 8 }
 ```
 
 Response `201`:
+
 ```json
 { "id": "uuid", "movieId": "uuid", "watchedAt": "...", "rating": 8 }
 ```
@@ -855,11 +853,13 @@ Body: { "rating": 9 }
 ```
 
 Response `200`:
+
 ```json
 { "id": "uuid", "rating": 9, "updatedAt": "..." }
 ```
 
 **Validation (DTO):**
+
 ```typescript
 export class UpdateWatchedDto {
   @IsOptional() @IsInt() @Min(1) @Max(10) rating?: number;
@@ -867,22 +867,25 @@ export class UpdateWatchedDto {
 ```
 
 **Business Logic:**
+
 - Use DB transaction: remove from watchlist (if exists) + insert into watched atomically.
 - Emit `list:updated` with `action: 'watched'` and `listType: 'watched'`.
 
 **Frontend Integration Plan:**
+
 - "Mark as watched" button: POST to `/watched`, invalidate `['watchlist']` and `['watched']`.
 - Rating component: PATCH on rating select, show optimistic update.
 - Edge cases: if movie is in favorites AND being removed from watched, keep favorites intact.
 - Socket `list:updated` → refresh watched feed.
 
 **Deliverables:**
+
 - Watched list with rating support
 - Atomic watchlist→watched transition
 
 ---
 
-#### Phase 2.3 — Favorites Module
+#### Phase 2.3 — Favorites Module ✅ DONE
 
 **Objective:** Allow users to add/remove movies from favorites. Identical to watchlist module in structure.
 
@@ -891,9 +894,10 @@ export class UpdateWatchedDto {
 **Dependencies:** Phase 2.1
 
 **Tasks:**
-1. Reuse `AddToListDto` and list logic with `list_type = 'favorites'`
-2. Endpoints: `GET`, `POST`, `DELETE` — same pattern as watchlist
-3. Socket emit on changes
+
+1. Reuse `AddToListDto` and list logic with `list_type = 'favorites'` ✅
+2. Endpoints: `GET`, `POST`, `DELETE` — same pattern as watchlist ✅
+3. Socket emit on changes ✅
 
 **API Design:**
 
@@ -904,20 +908,22 @@ DELETE /api/v1/favorites/:movieId
 ```
 
 **Frontend Integration Plan:**
+
 - Heart icon toggle with optimistic update.
 - React Query key: `['favorites']`.
 - `list:updated` socket event → refresh favorites count in nav badge.
 
 **Deliverables:**
+
 - Favorites CRUD functional with socket emission
 
 ---
 
-### 🏁 Milestone 3 — Notifications System
+### 🏁 Milestone 3 — Notifications System ✅ COMPLETED
 
 ---
 
-#### Phase 3.1 — Notifications Module + Socket Gateway
+#### Phase 3.1 — Notifications Module + Socket Gateway ✅ DONE
 
 **Objective:** Persist notifications to DB and deliver them in real-time via Socket.IO user rooms.
 
@@ -926,12 +932,13 @@ DELETE /api/v1/favorites/:movieId
 **Dependencies:** Phase 2.1, JWT Auth
 
 **Tasks:**
-1. Create `NotificationsModule` with entity, service, controller
-2. Create `SocketGateway` in `SocketModule` — extract userId from JWT cookie on connection
-3. Implement `NotificationsService.create()` called internally by other modules
-4. Implement `emitToUser()` helper in `SocketGateway`
-5. REST endpoints: `GET`, `PATCH /:id/read`, `PATCH /read-all`, `GET /unread-count`
-6. Cursor-based pagination for notifications feed
+
+1. Create `NotificationsModule` with entity, service, controller ✅
+2. Create `SocketGateway` in `SocketModule` — extract userId from JWT cookie on connection ✅
+3. Implement `NotificationsService.create()` called internally by other modules ✅
+4. Implement `emitToUser()` helper in `SocketGateway` ✅
+5. REST endpoints: `GET`, `PATCH /:id/read`, `PATCH /read-all`, `GET /unread-count` ✅
+6. Cursor-based pagination for notifications feed ✅
 
 **API Design:**
 
@@ -940,6 +947,7 @@ GET /api/v1/notifications?cursor=2024-01-10T12:00:00Z&limit=20
 ```
 
 Response:
+
 ```json
 {
   "data": [
@@ -967,16 +975,18 @@ PATCH /api/v1/notifications/read-all → 200 { "updatedCount": 5 }
 
 **Socket Events:**
 
-| Event | Direction | Payload |
-|---|---|---|
-| `notification:new` | Server→Client | `{ id, type, title, body, metadata, createdAt }` |
-| `notification:unread_count` | Server→Client | `{ count: number }` |
+| Event                       | Direction     | Payload                                          |
+| --------------------------- | ------------- | ------------------------------------------------ |
+| `notification:new`          | Server→Client | `{ id, type, title, body, metadata, createdAt }` |
+| `notification:unread_count` | Server→Client | `{ count: number }`                              |
 
 **Business Logic:**
+
 - `NotificationsService.create(userId, type, title, body, metadata)` — insert to DB, emit `notification:new`, emit updated unread count.
 - Auth in gateway: parse JWT from `handshake.auth.token` or cookie header.
 
 **Frontend Integration Plan:**
+
 - On app load: connect Socket.IO client.
 - Listen to `notification:new` → append to notifications list + show toast.
 - Listen to `notification:unread_count` → update badge in nav.
@@ -987,17 +997,18 @@ PATCH /api/v1/notifications/read-all → 200 { "updatedCount": 5 }
 - Edge cases: if socket disconnects, fall back to polling `unread-count` every 60s.
 
 **Deliverables:**
+
 - Socket gateway with user rooms
 - Notification persistence + real-time emission
 - Full notifications REST API
 
 ---
 
-### 🏁 Milestone 4 — Payment Integration
+### 🏁 Milestone 4 — Payment Integration ✅ COMPLETED
 
 ---
 
-#### Phase 4.1 — Stripe Payment Module
+#### Phase 4.1 — Stripe Payment Module ✅ DONE
 
 **Objective:** Implement Stripe payment intent flow for premium access, handle webhooks securely, update user premium status.
 
@@ -1006,14 +1017,15 @@ PATCH /api/v1/notifications/read-all → 200 { "updatedCount": 5 }
 **Dependencies:** Phase 3.1
 
 **Tasks:**
-1. Install and configure Stripe SDK
-2. Create `PaymentsModule` with `PaymentsService`, `PaymentsController`, `Payment` entity
-3. `POST /payments/intent` — create or retrieve existing Stripe customer + create payment intent
-4. `POST /payments/webhook` — verify signature, handle `payment_intent.succeeded`, `payment_intent.payment_failed`
-5. `GET /payments/history` — paginated payment history for user
-6. Update `users.is_premium = true` on success
-7. Emit `payment:status` socket event after webhook
-8. Create notification on payment success/failure
+
+1. Install and configure Stripe SDK ✅
+2. Create `PaymentsModule` with `PaymentsService`, `PaymentsController`, `Payment` entity ✅
+3. `POST /payments/intent` — create or retrieve existing Stripe customer + create payment intent ✅
+4. `POST /payments/webhook` — verify signature, handle `payment_intent.succeeded`, `payment_intent.payment_failed` ✅
+5. `GET /payments/history` — paginated payment history for user ✅
+6. Update `users.is_premium = true` on success ✅
+7. Emit `payment:status` socket event after webhook ✅
+8. Create notification on payment success/failure ✅
 
 **API Design:**
 
@@ -1023,6 +1035,7 @@ Body: { "amount": 999, "currency": "usd", "description": "Premium access" }
 ```
 
 Response `201`:
+
 ```json
 {
   "clientSecret": "pi_xxx_secret_yyy",
@@ -1037,6 +1050,7 @@ GET /api/v1/payments/history?page=1&limit=10
 ```
 
 Response:
+
 ```json
 {
   "data": [
@@ -1054,6 +1068,7 @@ Response:
 ```
 
 **Validation (DTO):**
+
 ```typescript
 export class CreatePaymentIntentDto {
   @IsInt() @IsPositive() @Min(50) amount: number; // in cents, min $0.50
@@ -1063,6 +1078,7 @@ export class CreatePaymentIntentDto {
 ```
 
 **Business Logic:**
+
 1. Extract `userId` from JWT.
 2. Find or create Stripe customer for user (store `stripe_customer_id` in DB).
 3. Check idempotency key for duplicate request.
@@ -1071,6 +1087,7 @@ export class CreatePaymentIntentDto {
 6. Return `clientSecret` to frontend.
 
 **Webhook Handler:**
+
 ```typescript
 switch (event.type) {
   case 'payment_intent.succeeded':
@@ -1083,9 +1100,11 @@ switch (event.type) {
 ```
 
 **Socket Events emitted after webhook:**
+
 - `payment:status` → `{ status: 'succeeded' | 'failed', amount, description }`
 
 **Frontend Integration Plan:**
+
 - Use Stripe.js + `@stripe/react-stripe-js` for card element.
 - Step 1: POST `/payments/intent` → receive `clientSecret`.
 - Step 2: `stripe.confirmCardPayment(clientSecret, { payment_method: { card } })`.
@@ -1096,6 +1115,7 @@ switch (event.type) {
 - Timeout: if no socket event within 15s, poll `GET /payments/history` for status.
 
 **Deliverables:**
+
 - Payment intent creation endpoint
 - Secure webhook handler with signature verification
 - Premium status update flow
@@ -1103,25 +1123,27 @@ switch (event.type) {
 
 ---
 
-### 🏁 Milestone 5 — Polish & Production Readiness
+### 🏁 Milestone 5 — Polish & Production Readiness ✅ COMPLETED
 
 ---
 
-#### Phase 5.1 — Cross-cutting Concerns
+#### Phase 5.1 — Cross-cutting Concerns ✅ DONE
 
 **Priority:** High
 **Estimated Effort:** 1 day
 
 **Tasks:**
-1. Global exception filter — standardized error envelope
-2. Response interceptor — wrap all responses in `{ data, meta }` envelope
-3. Request logging middleware (lightweight — log method, path, status, duration)
-4. Throttler guards applied globally + per-route overrides
-5. Helmet security headers
-6. CORS configuration
-7. Graceful shutdown handling
+
+1. Global exception filter — standardized error envelope ✅
+2. Response interceptor — wrap all responses in `{ data, meta }` envelope ✅
+3. Request logging middleware (lightweight — log method, path, status, duration) ✅
+4. Throttler guards applied globally + per-route overrides ✅
+5. Helmet security headers ✅
+6. CORS configuration ✅
+7. Graceful shutdown handling ✅
 
 **Global Exception Filter:**
+
 ```typescript
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
@@ -1129,12 +1151,14 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
-    const status = exception instanceof HttpException
-      ? exception.getStatus()
-      : HttpStatus.INTERNAL_SERVER_ERROR;
-    const message = exception instanceof HttpException
-      ? exception.getResponse()
-      : 'Internal server error';
+    const status =
+      exception instanceof HttpException
+        ? exception.getStatus()
+        : HttpStatus.INTERNAL_SERVER_ERROR;
+    const message =
+      exception instanceof HttpException
+        ? exception.getResponse()
+        : 'Internal server error';
     response.status(status).json({
       statusCode: status,
       message: typeof message === 'string' ? message : (message as any).message,
@@ -1154,6 +1178,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 **Estimated Effort:** 0.5 days
 
 **Tasks:**
+
 1. Write TypeORM migration for all tables
 2. Write seed script for development (sample movies, test user)
 3. `migration:generate`, `migration:run`, `migration:revert` scripts in `package.json`
@@ -1167,6 +1192,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 **Estimated Effort:** 0.5 days
 
 **Tasks:**
+
 1. `cleanOldNotifications` cron (daily)
 2. `reconcilePendingPayments` cron (hourly)
 3. `keepAlive` DB ping cron (every 10 minutes — prevents connection drop on free tier)
@@ -1175,14 +1201,53 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
 ## Milestone & Timeline Summary
 
-| Milestone | Phases | Effort | Priority |
-|---|---|---|---|
-| 1 — Foundation | 1.1 Bootstrap, 1.2 Movies | 3–4 days | Critical |
-| 2 — Lists | 2.1 Watchlist, 2.2 Watched, 2.3 Favorites | 3.5 days | High |
-| 3 — Notifications | 3.1 Notifications + Socket | 2 days | High |
-| 4 — Payments | 4.1 Stripe | 2–3 days | Medium |
-| 5 — Polish | 5.1 Cross-cutting, 5.2 Migrations, 5.3 Jobs | 2 days | High |
-| **Total** | | **~13–14 days** | |
+| Milestone         | Phases                                      | Status       | Effort          | Priority |
+| ----------------- | ------------------------------------------- | ------------ | --------------- | -------- |
+| 1 — Foundation    | 1.1 Bootstrap, 1.2 Movies                   | ✅ COMPLETED | 3–4 days        | Critical |
+| 2 — Lists         | 2.1 Watchlist, 2.2 Watched, 2.3 Favorites   | ✅ COMPLETED | 3.5 days        | High     |
+| 3 — Notifications | 3.1 Notifications + Socket                  | ✅ COMPLETED | 2 days          | High     |
+| 4 — Payments      | 4.1 Stripe                                  | ✅ COMPLETED | 2–3 days        | Medium   |
+| 5 — Polish        | 5.1 Cross-cutting, 5.2 Migrations, 5.3 Jobs | ✅ COMPLETED | 2 days          | High     |
+| **Total**         |                                             |              | **~13–14 days** |          |
+
+---
+
+## Overall Progress
+
+```
+██████████████████████████████████████████████████████  100%
+```
+
+**Completed:**
+
+- ✅ Phase 1.1 — Project Bootstrap & Database Setup
+- ✅ Phase 1.2 — Movies Module
+- ✅ Phase 2.1 — Watchlist Module
+- ✅ Phase 2.2 — Watched List Module
+- ✅ Phase 2.3 — Favorites Module
+- ✅ Phase 3.1 — Notifications + Socket Gateway
+- ✅ Phase 4.1 — Stripe Payment Module
+- ✅ Phase 5.1 — Cross-cutting Concerns (Exception Filter, Response Interceptor, Request Logging, Throttler, Helmet, CORS, Graceful Shutdown)
+- ✅ Phase 5.2 — Database Migrations
+- ✅ Phase 5.3 — Background Jobs & Keep-Alive
+
+---
+
+## Code Review Fixes Applied (Post-Milestone)
+
+### Security Issues Fixed:
+
+- SR-001: Payment amount validated server-side via pricing.config.ts
+- SR-003: Pagination DTO validation added
+- SR-006: Raw body type properly typed
+- SR-007: Password strength validation added (8+ chars, uppercase, lowercase, number)
+- SR-008: ParseIntPipe added for ID parameters
+
+### Type Safety Issues Fixed:
+
+- SR-002: All `any` types replaced with proper Stripe interfaces
+- TE-001: Return type declarations added to all service methods
+- TE-002: Implicit `any` return types resolved
 
 ---
 
@@ -1192,13 +1257,15 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 // Pagination query (base)
 export class PaginationDto {
   @IsOptional() @IsInt() @Min(1) @Type(() => Number) page: number = 1;
-  @IsOptional() @IsInt() @Min(1) @Max(50) @Type(() => Number) limit: number = 20;
+  @IsOptional() @IsInt() @Min(1) @Max(50) @Type(() => Number) limit: number =
+    20;
 }
 
 // Cursor pagination (notifications)
 export class CursorPaginationDto {
   @IsOptional() @IsDateString() cursor?: string;
-  @IsOptional() @IsInt() @Min(1) @Max(50) @Type(() => Number) limit: number = 20;
+  @IsOptional() @IsInt() @Min(1) @Max(50) @Type(() => Number) limit: number =
+    20;
 }
 
 // Add to any list
@@ -1219,13 +1286,12 @@ export class UpdateWatchedDto {
 
 // Payment intent creation
 export class CreatePaymentIntentDto {
-  @IsInt() @IsPositive() @Min(50) amount: number;
-  @IsString() @IsIn(['usd', 'eur', 'gbp']) currency: string;
+  @IsString() @IsIn(['premium_monthly', 'premium_yearly']) productType: string;
   @IsOptional() @IsString() @MaxLength(500) description?: string;
 }
 ```
 
 ---
 
-*Generated plan for: NestJS Movie Website Backend — Portfolio Project*
-*Stack: NestJS · PostgreSQL · Socket.IO · Stripe | Constraint: No Redis · Low RAM*
+_Generated plan for: NestJS Movie Website Backend — Portfolio Project_
+_Stack: NestJS · PostgreSQL · Socket.IO · Stripe | Constraint: No Redis · Low RAM_

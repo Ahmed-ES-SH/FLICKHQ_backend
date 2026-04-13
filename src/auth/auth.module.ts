@@ -18,10 +18,12 @@ import { AuthPublicController } from './auth.public.controller';
 
 // JWT Options
 function ReturnJWTOptions(config: ConfigService) {
+  const expiresIn = config.getOrThrow<string>('JWT_EXPIRES_IN');
+
   return {
-    secret: config.get<string>('JWT_SECRET'),
+    secret: config.getOrThrow<string>('JWT_SECRET'),
     signOptions: {
-      expiresIn: config.get<number>('JWT_EXPIRES_IN'),
+      expiresIn: expiresIn as never,
     },
   };
 }

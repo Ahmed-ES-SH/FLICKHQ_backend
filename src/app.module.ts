@@ -8,6 +8,12 @@ import { APP_GUARD } from '@nestjs/core';
 import { AuthModule } from './auth/auth.module';
 import { UserModule } from './user/user.module';
 import { MailerModule } from '@nestjs-modules/mailer';
+import { ListsModule } from './modules/lists/lists.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { MoviesModule } from './modules/movies/movies.module';
+import { PaymentsModule } from './modules/payments/payments.module';
+import { ScheduleModule } from '@nestjs/schedule';
+import { JobsModule } from './modules/jobs/jobs.module';
 
 // config files
 import { throttlerConfig } from './config/throttler.config';
@@ -18,13 +24,21 @@ import { CacheModule } from '@nestjs/cache-manager';
 import { CACHE_OPTIONS } from './config/cache.config';
 import { AuthGuard } from './auth/guards/auth.guard';
 import { JwtModule } from '@nestjs/jwt';
+import { validationSchema } from './config/env.validation';
 
 // JWT Options
-function ReturnJWTOptions(config: ConfigService) {
+import { JwtSignOptions } from '@nestjs/jwt';
+
+function ReturnJWTOptions(config: ConfigService): {
+  secret: string;
+  signOptions: JwtSignOptions;
+} {
+  const expiresIn = config.getOrThrow<string>('JWT_EXPIRES_IN');
+
   return {
-    secret: config.get<string>('JWT_SECRET'),
+    secret: config.getOrThrow<string>('JWT_SECRET'),
     signOptions: {
-      expiresIn: config.get<number>('JWT_EXPIRES_IN'),
+      expiresIn: expiresIn as never,
     },
   };
 }
@@ -40,7 +54,11 @@ const JWT_OPTIONS = {
 @Module({
   imports: [
     // config files
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      validationSchema,
+    }),
+    ScheduleModule.forRoot(),
     TypeOrmModule.forRoot(databaseConfig),
     ThrottlerModule.forRoot(throttlerConfig),
     MailerModule.forRootAsync(MAIL_OPTIONS),
@@ -51,6 +69,11 @@ const JWT_OPTIONS = {
     AuthModule,
     UserModule,
     MailModule,
+    ListsModule,
+    NotificationsModule,
+    MoviesModule,
+    PaymentsModule,
+    JobsModule,
   ],
   controllers: [AppController],
   exports: [JwtModule],

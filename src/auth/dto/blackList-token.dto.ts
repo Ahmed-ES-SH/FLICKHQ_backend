@@ -5,10 +5,10 @@ export class BlackListTokenDto {
   @IsString()
   @IsNotEmpty()
   @ApiProperty()
-  token: string;
+  token!: string;
 
   @IsString()
   @IsNotEmpty()
   @ApiProperty()
-  userId: string;
+  userId!: string;
 }

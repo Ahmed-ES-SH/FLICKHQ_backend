@@ -55,9 +55,13 @@ export class CategoriesController {
   @Get()
   @ApiOperation({ summary: 'Get all categories with pagination and filters' })
   @ApiResponse({ status: 200, description: 'List of categories' })
-  async findAll(
-    @Query() filters: FilterCategoriesQueryDto,
-  ): Promise<{ data: Category[]; total: number; page: number; limit: number }> {
+  async findAll(@Query() filters: FilterCategoriesQueryDto): Promise<{
+    data: Category[];
+    total: number;
+    totalPages: number;
+    page: number;
+    limit: number;
+  }> {
     return this.categoriesService.getAll(filters);
   }
 

@@ -4,6 +4,8 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  MinLength,
+  Matches,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { UserRoleEnum } from 'src/auth/types/UserRoleEnum';
@@ -36,6 +38,14 @@ export class CreateUserDto {
 
   @IsString()
   @IsNotEmpty()
-  @ApiProperty()
+  @MinLength(8)
+  @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/, {
+    message:
+      'Password must contain at least one lowercase letter, one uppercase letter, and one number',
+  })
+  @ApiProperty({
+    description:
+      'Password must be at least 8 characters with uppercase, lowercase, and number',
+  })
   password: string;
 }

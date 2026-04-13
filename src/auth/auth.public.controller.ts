@@ -89,11 +89,13 @@ export class AuthPublicController {
   @Get('google/callback')
   @UseGuards(AuthGuard('google'))
   async googleAuthRedirect(@Req() req: RequestWithUser, @Res() res: Response) {
+    const avatar = req.user.avatar ?? '';
+
     const result = await this.authService.validateGoogleUser({
       googleId: req.user.googleId!,
       email: req.user.email,
       name: req.user.name!,
-      avatar: req.user.avatar,
+      avatar,
     });
 
     res.cookie('sanad_auth_token', result.access_token, {

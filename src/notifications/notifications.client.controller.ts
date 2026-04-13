@@ -21,6 +21,7 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { NotificationsService } from './notifications.service';
 import { PaginationQueryDto } from './dto/paginate-notifications.dto';
+import { CursorPaginationDto } from './dto/cursor-pagination.dto';
 import { UpdatePreferencesDto } from './dto/update-preferences.dto';
 
 @ApiTags('Notifications')
@@ -30,9 +31,36 @@ export class NotificationsClientController {
   constructor(private readonly notificationsService: NotificationsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Get paginated notifications for the current user' })
-  @ApiResponse({ status: 200, description: 'Returns paginated notifications' })
+  @ApiOperation({
+    summary: 'Get notifications for the current user (cursor-based pagination)',
+    description:
+      'Use cursor param for infinite scroll. Omit cursor for first page.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns paginated notifications with cursor',
+  })
   async findAll(
+    @Request() req: { user: { id: string } },
+    @Query() cursorPagination: CursorPaginationDto,
+  ) {
+    return this.notificationsService.findAllForUserCursor(
+      req.user.id,
+      cursorPagination,
+    );
+  }
+
+  /**
+   * @deprecated Use cursor-based /notifications endpoint instead
+   */
+  @Get('paginated')
+  @ApiOperation({
+    summary: 'Get paginated notifications (offset-based - deprecated)',
+    description:
+      'This endpoint is deprecated. Use /notifications with cursor param instead.',
+  })
+  @ApiResponse({ status: 200, description: 'Returns paginated notifications' })
+  async findAllLegacy(
     @Request() req: { user: { id: string } },
     @Query() pagination: PaginationQueryDto,
   ) {

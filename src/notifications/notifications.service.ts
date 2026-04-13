@@ -5,7 +5,7 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, LessThan } from 'typeorm';
 import { Inject } from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { NotificationsGateway } from './notifications.gateway';
@@ -14,6 +14,10 @@ import { NotificationPreferences } from './schema/notification-preferences.schem
 import { CreateNotificationDto } from './dto/create-notification.dto';
 import { UpdatePreferencesDto } from './dto/update-preferences.dto';
 import { PaginationQueryDto } from './dto/paginate-notifications.dto';
+import {
+  CursorPaginationDto,
+  CursorPaginatedResponse,
+} from './dto/cursor-pagination.dto';
 import { NOTIFICATION_EVENTS } from './events/notification.events';
 import { NotificationType } from './enums/notification-type.enum';
 
@@ -54,6 +58,9 @@ export class NotificationsService {
     }
   }
 
+  /**
+   * Find all notifications for user with cursor-based pagination
+   */
   async findAllForUser(
     userId: string,
     pagination: PaginationQueryDto,
@@ -75,6 +82,59 @@ export class NotificationsService {
       });
 
       return { data, total, page, limit };
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        throw new InternalServerErrorException(error.message);
+      }
+      throw new InternalServerErrorException('Failed to fetch notifications');
+    }
+  }
+
+  /**
+   * Find all notifications for user with cursor-based pagination
+   * This is the recommended method for large datasets
+   */
+  async findAllForUserCursor(
+    userId: string,
+    pagination: CursorPaginationDto,
+  ): Promise<CursorPaginatedResponse<Notification>> {
+    try {
+      const { cursor, limit = 20 } = pagination;
+
+      // Build query with cursor (createdAt timestamp)
+      const whereCondition: Record<string, unknown> = {
+        userId,
+        isDeleted: false,
+      };
+
+      // If cursor provided, only fetch items created before cursor
+      if (cursor) {
+        whereCondition.createdAt = LessThan(new Date(cursor));
+      }
+
+      const data = await this.notificationRepository.find({
+        where: whereCondition,
+        order: { createdAt: 'DESC' },
+        take: limit + 1, // Fetch one extra to determine hasMore
+      });
+
+      // Determine if there are more items
+      const hasMore = data.length > limit;
+      const result = hasMore ? data.slice(0, limit) : data;
+
+      // Get next cursor from last item
+      const lastItem = result[result.length - 1];
+      const nextCursor =
+        hasMore && lastItem ? lastItem.createdAt.toISOString() : null;
+
+      return {
+        data: result,
+        meta: {
+          nextCursor,
+          hasMore,
+          limit,
+        },
+      };
     } catch (error: unknown) {
       if (error instanceof Error) {
         throw new InternalServerErrorException(error.message);
@@ -122,6 +182,10 @@ export class NotificationsService {
       // Emit read update
       this.notificationsGateway.emitReadUpdate(userId, id);
 
+      // Emit updated unread count
+      const unreadCount = await this.countUnread(userId);
+      this.notificationsGateway.emitCountUpdate(userId, unreadCount);
+
       return updated;
     } catch (error: unknown) {
       if (
@@ -148,6 +212,9 @@ export class NotificationsService {
 
       // Emit read update for all
       this.notificationsGateway.emitReadAllUpdate(userId);
+
+      // Emit updated unread count (should be 0)
+      this.notificationsGateway.emitCountUpdate(userId, 0);
     } catch (error: unknown) {
       if (error instanceof Error) {
         throw new InternalServerErrorException(error.message);
@@ -176,6 +243,13 @@ export class NotificationsService {
 
       notification.isDeleted = true;
       await this.notificationRepository.save(notification);
+
+      // Emit delete update
+      this.notificationsGateway.emitDelete(userId, id);
+
+      // Emit updated unread count
+      const unreadCount = await this.countUnread(userId);
+      this.notificationsGateway.emitCountUpdate(userId, unreadCount);
     } catch (error: unknown) {
       if (
         error instanceof NotFoundException ||
