@@ -4,18 +4,20 @@ import { NotificationsService } from './notifications.service';
 import { NotificationsGateway } from './notifications.gateway';
 import { NotificationsController } from './notifications.controller';
 import { NotificationsClientController } from './notifications.client.controller';
+import { PusherAuthController } from './pusher.auth.controller';
+import { PusherService } from './pusher.service';
 import { Notification } from './schema/notification.schema';
 import { NotificationPreferences } from './schema/notification-preferences.schema';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { AuthModule } from '../auth/auth.module';
+import { createPusherClient } from '../config/pusher.config';
+import Pusher from 'pusher';
 
 @Module({
   imports: [
-    // TypeORM entities
     TypeOrmModule.forFeature([Notification, NotificationPreferences]),
 
-    // JWT for WebSocket authentication
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
@@ -26,11 +28,24 @@ import { AuthModule } from '../auth/auth.module';
       }),
     }),
 
-    // Auth module for token blacklist checking
     AuthModule,
   ],
-  controllers: [NotificationsController, NotificationsClientController],
-  providers: [NotificationsService, NotificationsGateway],
-  exports: [NotificationsService, NotificationsGateway],
+  controllers: [
+    NotificationsController,
+    NotificationsClientController,
+    PusherAuthController,
+  ],
+  providers: [
+    NotificationsService,
+    NotificationsGateway,
+    PusherService,
+    {
+      provide: Pusher,
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) =>
+        createPusherClient(configService),
+    },
+  ],
+  exports: [NotificationsService, NotificationsGateway, PusherService],
 })
 export class NotificationsModule {}

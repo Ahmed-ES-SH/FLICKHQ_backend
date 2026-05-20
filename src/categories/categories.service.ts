@@ -5,18 +5,26 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, QueryFailedError, In } from 'typeorm';
 import { Category } from './schema/category.schema';
+import { Product } from '../products/schema/product.schema';
+import { Article } from '../blog/schema/article.schema';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
-import { FilterCategoriesQueryDto } from './dto/filter-categories-query.dto';
+import {
+  FilterCategoriesQueryDto,
+  CategorySortField,
+  CategorySortOrder,
+} from './dto/filter-categories-query.dto';
 import { ReorderCategoriesDto } from './dto/reorder-categories.dto';
 
 export interface CategoryWithCounts extends Category {
-  projectsCount: number;
-  servicesCount: number;
   articlesCount: number;
+  productsCount: number;
 }
+
+/** Postgres unique violation error code */
+const PG_UNIQUE_VIOLATION = '23505';
 
 @Injectable()
 export class CategoriesService {
@@ -25,7 +33,22 @@ export class CategoriesService {
   constructor(
     @InjectRepository(Category)
     private readonly categoryRepository: Repository<Category>,
+    @InjectRepository(Product)
+    private readonly productRepository: Repository<Product>,
+    @InjectRepository(Article)
+    private readonly articleRepository: Repository<Article>,
   ) {}
+
+  /** Whitelisted sort column mappings — prevents SQL injection */
+  private readonly sortColumnMap: Record<CategorySortField, string> = {
+    [CategorySortField.name]: 'category.name',
+    [CategorySortField.order]: 'category.order',
+    [CategorySortField.createdAt]: 'category.created_at',
+  };
+
+  // ─────────────────────────────────────────────
+  // Helpers
+  // ─────────────────────────────────────────────
 
   /**
    * Generate slug from name
@@ -40,50 +63,49 @@ export class CategoriesService {
   }
 
   /**
-   * Check if category name already exists
+   * Wrap a DB save and convert unique-violation errors to ConflictException.
+   * Handles both `name` and `slug` unique indexes.
    */
-  private async checkNameExists(
-    name: string,
-    excludeId?: string,
-  ): Promise<void> {
-    const existing = await this.categoryRepository.findOne({
-      where: { name },
-    });
-    if (existing && existing.id !== excludeId) {
-      throw new ConflictException('Category with this name already exists');
+  private async saveWithConflictHandling(
+    category: Category,
+  ): Promise<Category> {
+    try {
+      return await this.categoryRepository.save(category);
+    } catch (err) {
+      if (
+        err instanceof QueryFailedError &&
+        (err as QueryFailedError & { code: string }).code ===
+          PG_UNIQUE_VIOLATION
+      ) {
+        const detail = (err as QueryFailedError & { detail?: string }).detail;
+        if (detail?.includes('name')) {
+          throw new ConflictException('Category with this name already exists');
+        }
+        if (detail?.includes('slug')) {
+          throw new ConflictException('Category with this slug already exists');
+        }
+        throw new ConflictException('Category already exists');
+      }
+      throw err;
     }
   }
 
-  /**
-   * Check if category slug already exists
-   */
-  private async checkSlugExists(
-    slug: string,
-    excludeId?: string,
-  ): Promise<void> {
-    const existing = await this.categoryRepository.findOne({
-      where: { slug },
-    });
-    if (existing && existing.id !== excludeId) {
-      throw new ConflictException('Category with this slug already exists');
-    }
-  }
+  // ─────────────────────────────────────────────
+  // CRUD
+  // ─────────────────────────────────────────────
 
   /**
    * Create a new category
    */
   async create(dto: CreateCategoryDto): Promise<Category> {
-    await this.checkNameExists(dto.name);
-
     const slug = dto.slug || this.generateSlug(dto.name);
-    await this.checkSlugExists(slug);
 
     const category = this.categoryRepository.create({
       ...dto,
       slug,
     });
 
-    const saved = await this.categoryRepository.save(category);
+    const saved = await this.saveWithConflictHandling(category);
     this.logger.log(`Category created: ${saved.id}`);
     return saved;
   }
@@ -98,13 +120,9 @@ export class CategoriesService {
     page: number;
     limit: number;
   }> {
-    const {
-      page = 1,
-      limit = 10,
-      search,
-      sortBy = 'order',
-      sortOrder = 'ASC',
-    } = filters;
+    const page = filters.page ?? 1;
+    const limit = filters.limit ?? 10;
+    const { search, sortBy, sortOrder } = filters;
 
     const queryBuilder = this.categoryRepository.createQueryBuilder('category');
 
@@ -114,11 +132,14 @@ export class CategoriesService {
       });
     }
 
-    const validSortFields = ['name', 'order', 'createdAt'];
-    const sortField = validSortFields.includes(sortBy) ? sortBy : 'order';
+    // Use whitelisted column mapping — never interpolate user input directly
+    const orderByColumn =
+      sortBy != null ? this.sortColumnMap[sortBy] : this.sortColumnMap.order;
+    const orderDirection =
+      sortOrder === CategorySortOrder.DESC ? 'DESC' : 'ASC';
 
     queryBuilder
-      .orderBy(`category.${sortField}`, sortOrder)
+      .orderBy(orderByColumn, orderDirection)
       .skip((page - 1) * limit)
       .take(limit);
 
@@ -157,49 +178,40 @@ export class CategoriesService {
   async update(id: string, dto: UpdateCategoryDto): Promise<Category> {
     const category = await this.getById(id);
 
-    if (dto.name && dto.name !== category.name) {
-      await this.checkNameExists(dto.name, id);
+    // If name changes and slug was NOT explicitly provided, regenerate slug
+    if (dto.name && dto.name !== category.name && !dto.slug) {
+      category.slug = this.generateSlug(dto.name);
     }
 
-    if (dto.slug && dto.slug !== category.slug) {
-      await this.checkSlugExists(dto.slug, id);
-    }
+    Object.assign(category, dto);
 
-    const slug =
-      dto.slug || (dto.name ? this.generateSlug(dto.name) : category.slug);
-
-    Object.assign(category, dto, { slug });
-
-    const updated = await this.categoryRepository.save(category);
+    const updated = await this.saveWithConflictHandling(category);
     this.logger.log(`Category updated: ${id}`);
     return updated;
   }
 
   /**
    * Delete a category with validation
+   *
+   * The Article→Category and Product→Category relations both have
+   * onDelete: 'SET NULL', so the DB automatically nullifies the FK
+   * when the category is removed. We count related entities beforehand
+   * only for the warning log.
    */
   async delete(id: string): Promise<{ message: string }> {
     const category = await this.getById(id);
 
-    // Check if category is in use by any entity
-    const projectsCount = await this.categoryRepository.manager.count(
-      'projects',
-      { where: { categoryId: id } },
-    );
-    const servicesCount = await this.categoryRepository.manager.count(
-      'services',
-      { where: { categoryId: id } },
-    );
-    const articlesCount = await this.categoryRepository.manager.count(
-      'articles',
-      { where: { categoryId: id } },
-    );
+    // Count related entities in parallel using entity-based queries
+    const [articlesCount, productsCount] = await Promise.all([
+      this.articleRepository.count({ where: { category: { id } } }),
+      this.productRepository.count({ where: { category: { id } } }),
+    ]);
 
-    const totalInUse = projectsCount + servicesCount + articlesCount;
-
-    if (totalInUse > 0) {
+    if (articlesCount > 0 || productsCount > 0) {
       this.logger.warn(
-        `Category "${category.name}" (${id}) is still in use by ${projectsCount} projects, ${servicesCount} services, and ${articlesCount} articles. Setting related entities' categoryId to null.`,
+        `Category "${category.name}" (${id}) is referenced by ` +
+          `${articlesCount} article(s) and ${productsCount} product(s). ` +
+          `Their categoryId will be set to NULL on deletion.`,
       );
     }
 
@@ -215,43 +227,60 @@ export class CategoriesService {
   async getByIdWithCounts(id: string): Promise<CategoryWithCounts> {
     const category = await this.getById(id);
 
-    const projectsCount = await this.categoryRepository.manager.count(
-      'projects',
-      { where: { categoryId: id } },
-    );
-    const servicesCount = await this.categoryRepository.manager.count(
-      'services',
-      { where: { categoryId: id } },
-    );
-    const articlesCount = await this.categoryRepository.manager.count(
-      'articles',
-      { where: { categoryId: id } },
-    );
+    // Count related entities in parallel using entity-based queries
+    const [articlesCount, productsCount] = await Promise.all([
+      this.articleRepository.count({ where: { category: { id } } }),
+      this.productRepository.count({ where: { category: { id } } }),
+    ]);
 
     return {
       ...category,
-      projectsCount,
-      servicesCount,
       articlesCount,
+      productsCount,
     };
   }
 
   /**
-   * Bulk reorder categories
+   * Bulk reorder categories — batch fetch + single transaction save
    */
   async reorder(dto: ReorderCategoriesDto): Promise<Category[]> {
-    const categories: Category[] = [];
+    const ids = dto.categories.map((item) => item.id);
+    const orderMap = new Map(
+      dto.categories.map((item) => [item.id, item.order]),
+    );
 
-    for (const item of dto.categories) {
-      const category = await this.getById(item.id);
-      category.order = item.order;
-      categories.push(category);
+    // Single query to fetch all categories at once (findByIds is deprecated)
+    const categories = await this.categoryRepository.findBy({ id: In(ids) });
+
+    if (categories.length !== ids.length) {
+      const foundIds = new Set(categories.map((c) => c.id));
+      const missing = ids.filter((id) => !foundIds.has(id));
+      throw new NotFoundException(
+        `Categories not found: ${missing.join(', ')}`,
+      );
     }
 
-    const saved = await this.categoryRepository.save(categories);
+    // Atomic save inside a transaction — individual updates per row
+    await this.categoryRepository.manager.transaction(async (tx) => {
+      for (const category of categories) {
+        await tx.update(Category, category.id, {
+          order: orderMap.get(category.id)!,
+        });
+      }
+    });
+
+    // Re-fetch to return updated entities
+    const updated = await this.categoryRepository.findBy({ id: In(ids) });
+    // Sort by the requested order
+    updated.sort((a, b) => orderMap.get(a.id)! - orderMap.get(b.id)!);
+
     this.logger.log('Categories reordered');
-    return saved;
+    return updated;
   }
+
+  // ─────────────────────────────────────────────
+  // Public
+  // ─────────────────────────────────────────────
 
   /**
    * Get all categories for public (no pagination)

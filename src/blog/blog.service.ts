@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -9,11 +10,14 @@ import { Article } from './schema/article.schema';
 import { CreateArticleDto } from './dto/create-article.dto';
 import { UpdateArticleDto } from './dto/update-article.dto';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
-import { FilterArticlesQueryDto } from './dto/filter-articles-query.dto';
+import { FindAllArticlesQueryDto } from './dto/find-all-articles-query.dto';
+import { FindPublishedArticlesQueryDto } from './dto/find-published-articles-query.dto';
 import { generateUniqueSlug } from '../common/utils/slug.util';
 
 @Injectable()
 export class BlogService {
+  private readonly logger = new Logger(BlogService.name);
+
   constructor(
     @InjectRepository(Article)
     private readonly articleRepo: Repository<Article>,
@@ -31,14 +35,12 @@ export class BlogService {
     return Math.max(1, Math.ceil(wordCount / 200));
   }
 
-  private findOneOrFail(id: string): Promise<Article> {
-    const article = this.articleRepo.findOne({ where: { id } });
-    return article.then((result) => {
-      if (!result) {
-        throw new NotFoundException(`Article with ID "${id}" not found`);
-      }
-      return result;
-    });
+  private async findOneOrFail(id: string): Promise<Article> {
+    const article = await this.articleRepo.findOne({ where: { id } });
+    if (!article) {
+      throw new NotFoundException(`Article with ID "${id}" not found`);
+    }
+    return article;
   }
 
   async create(dto: CreateArticleDto): Promise<Article> {
@@ -96,51 +98,43 @@ export class BlogService {
     const article = await this.findOneOrFail(id);
 
     if (!article.isPublished) {
-      if (!article.excerpt || article.excerpt.trim().length === 0) {
+      if (!article.excerpt?.trim()) {
         throw new BadRequestException(
           'Excerpt is required before publishing an article',
         );
       }
       article.isPublished = true;
-      if (!article.publishedAt) {
-        article.publishedAt = new Date();
-      }
-      await this.articleRepo.save(article);
-      return {
-        id: article.id,
-        isPublished: article.isPublished,
-        publishedAt: article.publishedAt,
-        message: 'Article published successfully',
-      };
+      article.publishedAt ??= new Date();
     } else {
       article.isPublished = false;
-      await this.articleRepo.save(article);
-      return {
-        id: article.id,
-        isPublished: article.isPublished,
-        publishedAt: article.publishedAt,
-        message: 'Article unpublished successfully',
-      };
     }
+
+    await this.articleRepo.save(article);
+
+    return {
+      id: article.id,
+      isPublished: article.isPublished,
+      publishedAt: article.publishedAt,
+      message: article.isPublished
+        ? 'Article published successfully'
+        : 'Article unpublished successfully',
+    };
   }
 
   async remove(id: string): Promise<{ message: string }> {
     const article = await this.findOneOrFail(id);
 
     if (article.coverImageUrl) {
-      console.log(
-        `[BlogService] Cover image purge deferred for URL: ${article.coverImageUrl}`,
-      );
+      this.logger.warn('Cover image purge deferred', {
+        url: article.coverImageUrl,
+      });
     }
 
     await this.articleRepo.remove(article);
     return { message: 'Article deleted successfully' };
   }
 
-  async findPublished(
-    query: PaginationQueryDto,
-    filters: FilterArticlesQueryDto,
-  ): Promise<{
+  async findPublished(query: FindPublishedArticlesQueryDto): Promise<{
     data: Partial<Article>[];
     meta: { page: number; limit: number; total: number; totalPages: number };
   }> {
@@ -173,15 +167,15 @@ export class BlogService {
       .skip(skip)
       .take(limit);
 
-    if (filters.categoryId) {
+    if (query.categoryId) {
       qb.andWhere('article.categoryId = :categoryId', {
-        categoryId: filters.categoryId,
+        categoryId: query.categoryId,
       });
     }
 
-    if (filters.tag) {
+    if (query.tag) {
       qb.andWhere(':tag = ANY(article.tags)', {
-        tag: filters.tag.toLowerCase(),
+        tag: query.tag.toLowerCase(),
       });
     }
 
@@ -214,14 +208,15 @@ export class BlogService {
 
     await this.articleRepo.increment({ id: article.id }, 'viewsCount', 1);
 
-    article.viewsCount += 1;
-    return article;
+    // Re-fetch to get accurate count after atomic increment
+    const updated = await this.articleRepo.findOne({
+      where: { slug, isPublished: true },
+      relations: ['category'],
+    });
+    return updated!;
   }
 
-  async findAll(
-    query: PaginationQueryDto,
-    filters?: FilterArticlesQueryDto,
-  ): Promise<{
+  async findAll(query: FindAllArticlesQueryDto): Promise<{
     data: Article[];
     meta: { page: number; limit: number; total: number; totalPages: number };
   }> {
@@ -231,34 +226,44 @@ export class BlogService {
     const sortBy = query.sortBy || 'createdAt';
     const order = query.order || 'DESC';
 
+    // Map allowed sort fields to explicit column references to prevent SQL injection
+    const allowedSortColumns: Record<string, string> = {
+      createdAt: 'article.createdAt',
+      updatedAt: 'article.updatedAt',
+      viewsCount: 'article.viewsCount',
+      publishedAt: 'article.publishedAt',
+      title: 'article.title',
+    };
+    const orderColumn = allowedSortColumns[sortBy] ?? 'article.createdAt';
+
     const qb = this.articleRepo
       .createQueryBuilder('article')
       .leftJoinAndSelect('article.category', 'category')
-      .orderBy(`article.${sortBy}`, order)
+      .orderBy(orderColumn, order)
       .skip(skip)
       .take(limit);
 
-    if (filters?.categoryId) {
+    if (query.categoryId) {
       qb.andWhere('article.categoryId = :categoryId', {
-        categoryId: filters.categoryId,
+        categoryId: query.categoryId,
       });
     }
 
-    if (filters?.tag) {
+    if (query.tag) {
       qb.andWhere(':tag = ANY(article.tags)', {
-        tag: filters.tag.toLowerCase(),
+        tag: query.tag.toLowerCase(),
       });
     }
 
-    if (filters?.search) {
+    if (query.search) {
       qb.andWhere('article.title ILIKE :search', {
-        search: `%${filters.search}%`,
+        search: `%${query.search}%`,
       });
     }
 
-    if (filters?.isPublished !== undefined) {
+    if (query.isPublished !== undefined) {
       qb.andWhere('article.isPublished = :isPublished', {
-        isPublished: filters.isPublished,
+        isPublished: query.isPublished,
       });
     }
 

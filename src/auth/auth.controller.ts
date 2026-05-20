@@ -6,42 +6,34 @@ import {
   HttpStatus,
   Post,
   Req,
-  UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
-import { JwtAuthGuard } from './guards/jwt-auth.guard';
-
-import type { Response } from 'express';
-import { logoutDTO } from './dto/logout.dto';
+import { LogoutDto } from './dto/logout.dto';
 import { GetUser } from './decorators/current-user.decorator';
-import { User } from '../user/schema/user.schema';
+import type { RequestWithUser } from './types/request.interface';
 
-/**
- * Controller responsible for handling authentication-related requests.
- * Includes Login, Email Verification, Password Reset, and Google OAuth-.
- */
+@ApiTags('auth')
+@ApiBearerAuth()
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   /**
    * Logs out the current user by adding their token to the blacklist.
-   * @param dto - Contains the token and user ID to be blacklisted.
    */
   @Post('logout')
   @HttpCode(HttpStatus.OK)
-  @UseGuards(JwtAuthGuard)
-  logout(@Body() dto: logoutDTO, @GetUser() user: User) {
-    return this.authService.logout(dto, user.id.toString());
+  logout(@Body() dto: LogoutDto, @GetUser('id') userId: number) {
+    return this.authService.logout(dto, userId.toString());
   }
 
   /**
    * Retrieves the profile of the currently authenticated user.
-   * @param req - The request object containing the user attached by JwtAuthGuard.
+   * Returns the decoded JWT payload (id, email, role).
    */
-  @UseGuards(JwtAuthGuard)
   @Get('current-user')
-  getProfile(@Req() req: Response & { user: User }) {
+  getProfile(@Req() req: RequestWithUser) {
     return req.user;
   }
 }

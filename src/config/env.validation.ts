@@ -177,4 +177,18 @@ export const validationSchema = Joi.object({
    * Format: "Name" <email@example.com>
    */
   MAIL_FROM: Joi.string().optional(),
+
+  // ===================
+  // PUSHER (Required for real-time notifications)
+  // ===================
+
+  PUSHER_APP_ID: Joi.string().required(),
+
+  PUSHER_KEY: Joi.string().required(),
+
+  PUSHER_SECRET: Joi.string().required(),
+
+  PUSHER_CLUSTER: Joi.string()
+    .valid('us2', 'eu', 'ap1', 'ap2', 'ap3', 'mt1')
+    .required(),
 });

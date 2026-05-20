@@ -4,18 +4,17 @@ import { IsEmail, IsNotEmpty, IsString, MinLength } from 'class-validator';
 export class ResetPasswordDto {
   @IsEmail()
   @IsNotEmpty()
-  @IsString()
-  @ApiProperty()
+  @ApiProperty({ description: 'User email address' })
   email!: string;
 
   @IsString()
   @IsNotEmpty()
   @MinLength(6)
-  @ApiProperty()
+  @ApiProperty({ description: 'New password (min 6 characters)' })
   password!: string;
 
   @IsString()
   @IsNotEmpty()
-  @ApiProperty()
+  @ApiProperty({ description: 'Reset token received via email' })
   token!: string;
 }

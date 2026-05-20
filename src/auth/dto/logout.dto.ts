@@ -1,9 +1,9 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsNotEmpty, IsString } from 'class-validator';
 
-export class logoutDTO {
+export class LogoutDto {
   @IsString()
   @IsNotEmpty()
-  @ApiProperty()
+  @ApiProperty({ description: 'JWT token to blacklist' })
   token!: string;
 }

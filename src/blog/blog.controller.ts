@@ -13,10 +13,10 @@ import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { BlogService } from './blog.service';
 import { CreateArticleDto } from './dto/create-article.dto';
 import { UpdateArticleDto } from './dto/update-article.dto';
-import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
-import { FilterArticlesQueryDto } from './dto/filter-articles-query.dto';
+import { FindAllArticlesQueryDto } from './dto/find-all-articles-query.dto';
 import { Roles } from '../auth/decorators/Roles.decorator';
 import { UserRoleEnum } from '../auth/types/UserRoleEnum';
+import { Article } from './schema/article.schema';
 
 @Controller('admin/blog')
 @Roles(UserRoleEnum.ADMIN)
@@ -68,10 +68,7 @@ export class BlogController {
   @Get()
   @ApiOperation({ summary: 'List all articles with pagination and filtering' })
   @ApiResponse({ status: 200, description: 'Paginated list of articles' })
-  findAll(
-    @Query() query: PaginationQueryDto,
-    @Query() filters: FilterArticlesQueryDto,
-  ) {
-    return this.blogService.findAll(query, filters);
+  findAll(@Query() query: FindAllArticlesQueryDto) {
+    return this.blogService.findAll(query);
   }
 }

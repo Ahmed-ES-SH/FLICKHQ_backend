@@ -16,7 +16,7 @@ import { WatchedService } from './watched.service';
 import { AddToListDto } from '../common/dto/add-to-list.dto';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 import { GetUser } from '../../../auth/decorators/current-user.decorator';
-import { User } from '../../../user/schema/user.schema';
+import { User } from '../../../user/schema/user.entity';
 
 @Controller('api/v1/watched')
 @UseGuards(AuthGuard('jwt'))

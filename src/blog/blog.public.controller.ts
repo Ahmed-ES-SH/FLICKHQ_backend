@@ -2,8 +2,7 @@ import { Controller, Get, Param, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { Public } from '../auth/decorators/public.decorator';
 import { BlogService } from './blog.service';
-import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
-import { FilterArticlesQueryDto } from './dto/filter-articles-query.dto';
+import { FindPublishedArticlesQueryDto } from './dto/find-published-articles-query.dto';
 
 @Public()
 @Controller('blog')
@@ -12,13 +11,15 @@ export class BlogPublicController {
   constructor(private readonly blogService: BlogService) {}
 
   @Get()
-  @ApiOperation({ summary: 'List published articles with pagination and tag filtering' })
-  @ApiResponse({ status: 200, description: 'Paginated list of published articles' })
-  findPublished(
-    @Query() pagination: PaginationQueryDto,
-    @Query() filters: FilterArticlesQueryDto,
-  ) {
-    return this.blogService.findPublished(pagination, filters);
+  @ApiOperation({
+    summary: 'List published articles with pagination and tag filtering',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Paginated list of published articles',
+  })
+  findPublished(@Query() query: FindPublishedArticlesQueryDto) {
+    return this.blogService.findPublished(query);
   }
 
   @Get(':slug')

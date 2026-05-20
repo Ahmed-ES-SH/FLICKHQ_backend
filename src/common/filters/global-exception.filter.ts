@@ -42,8 +42,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
     const errorResponse = {
       statusCode: status,
-      message:
-        typeof message === 'string' ? message : (message as object).toString(),
+      message: typeof message === 'string' ? message : message.toString(),
       errors,
       timestamp: new Date().toISOString(),
       path: request.url,

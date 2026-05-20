@@ -2,18 +2,17 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
+import { APP_GUARD } from '@nestjs/core';
 import { AuthService } from './auth.service';
 import { UserModule } from '../user/user.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { User } from '../user/schema/user.schema';
+import { User } from '../user/schema/user.entity';
 import { AuthController } from './auth.controller';
 import { GoogleStrategy } from './strategies/google.strategy';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { MailModule } from '../mail/mail.module';
-
 import { AuthGuard } from './guards/auth.guard';
-import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import { BlackList } from './schema/blacklisk-tokens.schema';
+import { BlackList } from './schema/blacklist-tokens.schema';
 import { AuthPublicController } from './auth.public.controller';
 
 // JWT Options
@@ -36,8 +35,6 @@ const JWT_OPTIONS = {
   },
 };
 
-// module
-
 @Module({
   imports: [
     TypeOrmModule.forFeature([User, BlackList]),
@@ -52,8 +49,8 @@ const JWT_OPTIONS = {
     AuthService,
     GoogleStrategy,
     JwtStrategy,
-    AuthGuard,
-    JwtAuthGuard,
+    // Global guard — handles auth for all routes, respects @Public()
+    { provide: APP_GUARD, useClass: AuthGuard },
   ],
   exports: [AuthService, JwtModule],
 })

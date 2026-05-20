@@ -1,6 +1,17 @@
-import { IsOptional, IsString, IsInt, Min } from 'class-validator';
+import { IsOptional, IsString, IsInt, Min, Max, IsEnum } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+
+export enum CategorySortField {
+  name = 'name',
+  order = 'order',
+  createdAt = 'createdAt',
+}
+
+export enum CategorySortOrder {
+  ASC = 'ASC',
+  DESC = 'DESC',
+}
 
 export class FilterCategoriesQueryDto {
   @IsOptional()
@@ -14,6 +25,7 @@ export class FilterCategoriesQueryDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(100)
   @ApiPropertyOptional({ description: 'Items per page', default: 10 })
   limit?: number = 10;
 
@@ -23,17 +35,20 @@ export class FilterCategoriesQueryDto {
   search?: string;
 
   @IsOptional()
-  @IsString()
+  @IsEnum(CategorySortField)
   @ApiPropertyOptional({
-    description: 'Sort by field (name, order, createdAt)',
+    description: 'Sort by field',
+    enum: CategorySortField,
+    default: CategorySortField.order,
   })
-  sortBy?: string = 'order';
+  sortBy?: CategorySortField = CategorySortField.order;
 
   @IsOptional()
-  @IsString()
+  @IsEnum(CategorySortOrder)
   @ApiPropertyOptional({
-    description: 'Sort order (ASC or DESC)',
-    enum: ['ASC', 'DESC'],
+    description: 'Sort order',
+    enum: CategorySortOrder,
+    default: CategorySortOrder.ASC,
   })
-  sortOrder?: 'ASC' | 'DESC' = 'ASC';
+  sortOrder?: CategorySortOrder = CategorySortOrder.ASC;
 }

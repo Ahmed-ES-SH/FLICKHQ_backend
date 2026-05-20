@@ -22,7 +22,8 @@
     "migration:generate": "npm run typeorm -- migration:generate",
     "migration:create": "npx typeorm migration:create db/migrations/$npm_config_name",
     "migration:run": "npm run typeorm -- migration:run",
-    "migration:revert": "npm run typeorm -- migration:revert"
+    "migration:revert": "npm run typeorm -- migration:revert",
+    "seed:run": "ts-node -r tsconfig-paths/register src/database/seeds/seed-runner.ts"
   },
   "dependencies": {
     "@nestjs-modules/mailer": "^2.3.4",
@@ -36,12 +37,10 @@
     "@nestjs/mapped-types": "*",
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.0.1",
-    "@nestjs/platform-socket.io": "^11.1.18",
     "@nestjs/schedule": "^6.1.1",
     "@nestjs/swagger": "^11.2.6",
     "@nestjs/throttler": "^6.5.0",
     "@nestjs/typeorm": "^11.0.0",
-    "@nestjs/websockets": "^11.1.18",
     "@types/cookie-parser": "^1.4.10",
     "argon2": "^0.44.0",
     "cache-manager": "^7.2.8",
@@ -57,11 +56,12 @@
     "passport-google-oauth20": "^2.0.0",
     "passport-jwt": "^4.0.1",
     "pg": "^8.20.0",
+    "pusher": "^5.3.3",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "socket.io": "^4.8.3",
     "stripe": "^22.0.1",
-    "typeorm": "^0.3.28"
+    "typeorm": "^0.3.28",
+    "uuid": "^14.0.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
@@ -76,6 +76,7 @@
     "@types/passport-google-oauth20": "^2.0.17",
     "@types/passport-jwt": "^4.0.1",
     "@types/supertest": "^6.0.2",
+    "@types/uuid": "^11.0.0",
     "cross-env": "^10.1.0",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",

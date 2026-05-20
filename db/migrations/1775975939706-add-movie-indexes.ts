@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddMovieIndexes1704062400000 implements MigrationInterface {
-  name = 'AddMovieIndexes1704062400000';
+export class AddMovieIndexes1775975939706 implements MigrationInterface {
+  name = 'AddMovieIndexes1775975939706';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     // GIN index for full-text search on title
@@ -19,7 +19,7 @@ export class AddMovieIndexes1704062400000 implements MigrationInterface {
     // Index on tmdb_id (already unique, but ensure B-tree index exists)
     await queryRunner.query(`
             CREATE INDEX IF NOT EXISTS idx_movies_tmdb_id 
-            ON movies (tmdb_id)
+            ON movies ("tmdbId")
         `);
   }
 

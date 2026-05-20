@@ -46,8 +46,11 @@ export class NotificationsService {
 
       const saved = await this.notificationRepository.save(notification);
 
-      // Emit real-time notification
-      this.notificationsGateway.emitToUser(dto.userId, saved);
+      try {
+        await this.notificationsGateway.emitToUser(dto.userId, saved);
+      } catch (error) {
+        console.error('Failed to emit Pusher event:', error);
+      }
 
       return saved;
     } catch (error: unknown) {
@@ -179,12 +182,14 @@ export class NotificationsService {
 
       const updated = await this.notificationRepository.save(notification);
 
-      // Emit read update
-      this.notificationsGateway.emitReadUpdate(userId, id);
+      try {
+        await this.notificationsGateway.emitReadUpdate(userId, id);
 
-      // Emit updated unread count
-      const unreadCount = await this.countUnread(userId);
-      this.notificationsGateway.emitCountUpdate(userId, unreadCount);
+        const unreadCount = await this.countUnread(userId);
+        await this.notificationsGateway.emitCountUpdate(userId, unreadCount);
+      } catch (error) {
+        console.error('Failed to emit Pusher event:', error);
+      }
 
       return updated;
     } catch (error: unknown) {
@@ -210,11 +215,12 @@ export class NotificationsService {
         { isRead: true, readAt: new Date() },
       );
 
-      // Emit read update for all
-      this.notificationsGateway.emitReadAllUpdate(userId);
-
-      // Emit updated unread count (should be 0)
-      this.notificationsGateway.emitCountUpdate(userId, 0);
+      try {
+        await this.notificationsGateway.emitReadAllUpdate(userId);
+        await this.notificationsGateway.emitCountUpdate(userId, 0);
+      } catch (error) {
+        console.error('Failed to emit Pusher event:', error);
+      }
     } catch (error: unknown) {
       if (error instanceof Error) {
         throw new InternalServerErrorException(error.message);
@@ -244,12 +250,14 @@ export class NotificationsService {
       notification.isDeleted = true;
       await this.notificationRepository.save(notification);
 
-      // Emit delete update
-      this.notificationsGateway.emitDelete(userId, id);
+      try {
+        await this.notificationsGateway.emitDelete(userId, id);
 
-      // Emit updated unread count
-      const unreadCount = await this.countUnread(userId);
-      this.notificationsGateway.emitCountUpdate(userId, unreadCount);
+        const unreadCount = await this.countUnread(userId);
+        await this.notificationsGateway.emitCountUpdate(userId, unreadCount);
+      } catch (error) {
+        console.error('Failed to emit Pusher event:', error);
+      }
     } catch (error: unknown) {
       if (
         error instanceof NotFoundException ||
@@ -337,12 +345,18 @@ export class NotificationsService {
 
         await this.notificationRepository.save(notifications);
 
-        // Emit to each user
         for (const userId of targetUserIds) {
           const userNotifications = notifications.filter(
             (n) => n.userId === userId,
           );
-          this.notificationsGateway.emitToUser(userId, userNotifications[0]);
+          try {
+            await this.notificationsGateway.emitToUser(
+              userId,
+              userNotifications[0],
+            );
+          } catch (error) {
+            console.error('Failed to emit Pusher event:', error);
+          }
         }
       } else {
         // This would require fetching all users - use event emitter for system-wide

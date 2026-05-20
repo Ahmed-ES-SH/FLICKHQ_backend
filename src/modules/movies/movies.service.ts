@@ -110,9 +110,7 @@ export class MoviesService {
       where: { tmdbId: tmdbMovie.id },
     });
 
-    const genres = tmdbMovie.genres
-      ? tmdbMovie.genres.map((g) => g.name)
-      : [];
+    const genres = tmdbMovie.genres ? tmdbMovie.genres.map((g) => g.name) : [];
 
     const movieData: Partial<Movie> = {
       tmdbId: tmdbMovie.id,

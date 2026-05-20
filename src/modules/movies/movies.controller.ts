@@ -1,4 +1,10 @@
-import { Controller, Get, Param, Query, NotFoundException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  Query,
+  NotFoundException,
+} from '@nestjs/common';
 import { MoviesService } from './movies.service';
 import { MovieQueryDto } from './dto/movie-query.dto';
 
@@ -12,7 +18,11 @@ export class MoviesController {
    */
   @Get()
   async searchMovies(@Query() query: MovieQueryDto) {
-    return this.moviesService.searchMovies(query.query, query.page, query.limit);
+    return this.moviesService.searchMovies(
+      query.query,
+      query.page,
+      query.limit,
+    );
   }
 
   /**

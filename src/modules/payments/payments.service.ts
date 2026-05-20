@@ -12,7 +12,7 @@ import { ConfigService } from '@nestjs/config';
 import { PaymentsRepository } from './payments.repository';
 import { CreatePaymentIntentDto } from './dto/create-payment-intent.dto';
 import { PaymentStatus } from './schema/payment.schema';
-import { User } from '../../user/schema/user.schema';
+import { User } from '../../user/schema/user.entity';
 import { NOTIFICATION_EVENTS } from '../../notifications/events/notification.events';
 import {
   NotificationsGateway,
@@ -295,7 +295,7 @@ export class PaymentsService {
         // Still mark user as premium if customer exists
         const userId = paymentIntent.metadata?.userId;
         if (userId) {
-          await queryRunner.manager.update(User, userId as unknown as number, {
+          await queryRunner.manager.update(User, userId, {
             isPremium: true,
           });
         }
@@ -310,13 +310,9 @@ export class PaymentsService {
       });
 
       // Update user premium status
-      await queryRunner.manager.update(
-        User,
-        payment.userId as unknown as number,
-        {
-          isPremium: true,
-        },
-      );
+      await queryRunner.manager.update(User, payment.userId, {
+        isPremium: true,
+      });
 
       await queryRunner.commitTransaction();
 
@@ -330,12 +326,12 @@ export class PaymentsService {
       });
 
       // Emit payment status socket event
-      const successPayload: PaymentStatusPayload = {
-        status: 'succeeded',
+      const successPayload = {
+        status: 'succeeded' as const,
         amount: payment.amount,
         description: payment.description || 'Premium access',
       };
-      this.notificationsGateway.emitPaymentStatus(
+      await this.notificationsGateway.emitPaymentStatus(
         payment.userId,
         successPayload,
       );
@@ -380,13 +376,16 @@ export class PaymentsService {
     });
 
     // Emit payment status socket event
-    const failedPayload: PaymentStatusPayload = {
-      status: 'failed',
+    const failedPayload = {
+      status: 'failed' as const,
       amount: payment.amount,
       description:
         paymentIntent.last_payment_error?.message || 'Payment failed',
     };
-    this.notificationsGateway.emitPaymentStatus(payment.userId, failedPayload);
+    await this.notificationsGateway.emitPaymentStatus(
+      payment.userId,
+      failedPayload,
+    );
   }
 
   private async handleChargeRefunded(charge: StripeCharge): Promise<void> {
@@ -410,21 +409,19 @@ export class PaymentsService {
       });
 
       // Optionally revoke premium
-      await queryRunner.manager.update(
-        User,
-        payment.userId as unknown as number,
-        { isPremium: false },
-      );
+      await queryRunner.manager.update(User, payment.userId, {
+        isPremium: false,
+      });
 
       await queryRunner.commitTransaction();
 
       // Emit payment status socket event for refund
-      const refundPayload: PaymentStatusPayload = {
-        status: 'refunded',
+      const refundPayload = {
+        status: 'refunded' as const,
         amount: payment.amount,
         description: payment.description || 'Payment refunded',
       };
-      this.notificationsGateway.emitPaymentStatus(
+      await this.notificationsGateway.emitPaymentStatus(
         payment.userId,
         refundPayload,
       );

@@ -5,30 +5,28 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 
 import { Request } from 'express';
 import { AuthService } from '../auth.service';
 import { Reflector } from '@nestjs/core';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
-
-const COOKIE_NAME = 'sanad_auth_token';
-
-export interface RequestWithToken extends Request {
-  cookies: Record<string, string>;
-  user: {
-    id: string;
-    email: string;
-    role: string;
-  };
-}
+import { RequestWithUser } from '../types/request.interface';
+import { UserRoleEnum } from '../types/UserRoleEnum';
 
 @Injectable()
 export class AuthGuard implements CanActivate {
+  private readonly cookieName: string;
+
   constructor(
     private readonly authService: AuthService,
     private readonly jwtService: JwtService,
     private reflector: Reflector,
-  ) {}
+    private readonly configService: ConfigService,
+  ) {
+    this.cookieName =
+      this.configService.get<string>('AUTH_TOKEN') ?? 'sanad_auth_token';
+  }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
@@ -37,8 +35,8 @@ export class AuthGuard implements CanActivate {
     ]);
     if (isPublic) return true;
 
-    const request = context.switchToHttp().getRequest<RequestWithToken>();
-    const token: string | undefined = request.cookies?.[COOKIE_NAME];
+    const request = context.switchToHttp().getRequest<RequestWithUser>();
+    const token: string | undefined = request.cookies?.[this.cookieName];
 
     if (!token) {
       throw new UnauthorizedException('Authentication cookie not found');
@@ -46,9 +44,9 @@ export class AuthGuard implements CanActivate {
 
     try {
       const decodedToken = await this.jwtService.verifyAsync<{
-        id: string;
+        id: number;
         email: string;
-        role: string;
+        role: UserRoleEnum;
       }>(token);
 
       const isBlacklisted = await this.authService.isTokenBlacklisted(token);
@@ -56,7 +54,7 @@ export class AuthGuard implements CanActivate {
         throw new UnauthorizedException('This token has been revoked');
       }
 
-      request['user'] = decodedToken;
+      request.user = decodedToken;
 
       return true;
     } catch (error) {

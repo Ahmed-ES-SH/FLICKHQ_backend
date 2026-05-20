@@ -17,9 +17,10 @@ export class ContactService {
     ipAddress: string,
   ): Promise<{ message: string; id: string }> {
     const entity = this.contactMessageRepository.create({
-      ...dto,
-      isRead: false,
-      repliedAt: null,
+      fullName: dto.fullName,
+      email: dto.email,
+      subject: dto.subject,
+      message: dto.message,
       ipAddress,
     });
 
@@ -90,12 +91,15 @@ export class ContactService {
   async markAsRead(
     id: string,
   ): Promise<{ id: string; isRead: boolean; message: string }> {
-    const message = await this.findOneOrFail(id);
-    message.isRead = true;
-    await this.contactMessageRepository.save(message);
+    const result = await this.contactMessageRepository.update(id, {
+      isRead: true,
+    });
+    if (result.affected === 0) {
+      throw new NotFoundException('Contact message not found');
+    }
 
     return {
-      id: message.id,
+      id,
       isRead: true,
       message: 'Message marked as read',
     };
@@ -107,22 +111,28 @@ export class ContactService {
     repliedAt: Date;
     message: string;
   }> {
-    const message = await this.findOneOrFail(id);
-    message.repliedAt = new Date();
-    message.isRead = true;
-    await this.contactMessageRepository.save(message);
+    const repliedAt = new Date();
+    const result = await this.contactMessageRepository.update(id, {
+      isRead: true,
+      repliedAt,
+    });
+    if (result.affected === 0) {
+      throw new NotFoundException('Contact message not found');
+    }
 
     return {
-      id: message.id,
+      id,
       isRead: true,
-      repliedAt: message.repliedAt,
+      repliedAt,
       message: 'Message marked as replied',
     };
   }
 
   async remove(id: string): Promise<{ message: string }> {
-    const message = await this.findOneOrFail(id);
-    await this.contactMessageRepository.remove(message);
+    const result = await this.contactMessageRepository.delete(id);
+    if (result.affected === 0) {
+      throw new NotFoundException('Contact message not found');
+    }
 
     return { message: 'Contact message deleted successfully' };
   }

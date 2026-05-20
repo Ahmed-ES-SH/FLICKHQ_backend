@@ -9,6 +9,8 @@ import {
   Query,
   ParseUUIDPipe,
   UseGuards,
+  UseInterceptors,
+  ClassSerializerInterceptor,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -21,7 +23,7 @@ import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 import { FilterCategoriesQueryDto } from './dto/filter-categories-query.dto';
 import { ReorderCategoriesDto } from './dto/reorder-categories.dto';
-import { Category } from './schema/category.schema';
+import { CategoryResponseDto } from './dto/category-response.dto';
 import { Roles } from '../auth/decorators/Roles.decorator';
 import { UserRoleEnum } from '../auth/types/UserRoleEnum';
 import { AuthGuard } from '../auth/guards/auth.guard';
@@ -31,6 +33,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 @ApiBearerAuth()
 @UseGuards(AuthGuard, RolesGuard)
 @Roles(UserRoleEnum.ADMIN)
+@UseInterceptors(ClassSerializerInterceptor)
 @Controller('admin/categories')
 export class CategoriesController {
   constructor(private readonly categoriesService: CategoriesService) {}
@@ -40,7 +43,7 @@ export class CategoriesController {
   @ApiResponse({
     status: 201,
     description: 'Category created successfully',
-    type: Category,
+    type: CategoryResponseDto,
   })
   @ApiResponse({
     status: 409,
@@ -48,7 +51,7 @@ export class CategoriesController {
   })
   async create(
     @Body() createCategoryDto: CreateCategoryDto,
-  ): Promise<Category> {
+  ): Promise<CategoryResponseDto> {
     return this.categoriesService.create(createCategoryDto);
   }
 
@@ -56,7 +59,7 @@ export class CategoriesController {
   @ApiOperation({ summary: 'Get all categories with pagination and filters' })
   @ApiResponse({ status: 200, description: 'List of categories' })
   async findAll(@Query() filters: FilterCategoriesQueryDto): Promise<{
-    data: Category[];
+    data: CategoryResponseDto[];
     total: number;
     totalPages: number;
     page: number;
@@ -67,9 +70,15 @@ export class CategoriesController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get a category by ID' })
-  @ApiResponse({ status: 200, description: 'Category found', type: Category })
+  @ApiResponse({
+    status: 200,
+    description: 'Category found',
+    type: CategoryResponseDto,
+  })
   @ApiResponse({ status: 404, description: 'Category not found' })
-  async findOne(@Param('id', ParseUUIDPipe) id: string): Promise<Category> {
+  async findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<CategoryResponseDto> {
     return this.categoriesService.getById(id);
   }
 
@@ -78,7 +87,7 @@ export class CategoriesController {
   @ApiResponse({
     status: 200,
     description: 'Category updated successfully',
-    type: Category,
+    type: CategoryResponseDto,
   })
   @ApiResponse({ status: 404, description: 'Category not found' })
   @ApiResponse({
@@ -88,7 +97,7 @@ export class CategoriesController {
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateCategoryDto: UpdateCategoryDto,
-  ): Promise<Category> {
+  ): Promise<CategoryResponseDto> {
     return this.categoriesService.update(id, updateCategoryDto);
   }
 
@@ -107,9 +116,11 @@ export class CategoriesController {
   @ApiResponse({
     status: 200,
     description: 'Categories reordered successfully',
-    type: [Category],
+    type: [CategoryResponseDto],
   })
-  async reorder(@Body() reorderDto: ReorderCategoriesDto): Promise<Category[]> {
+  async reorder(
+    @Body() reorderDto: ReorderCategoriesDto,
+  ): Promise<CategoryResponseDto[]> {
     return this.categoriesService.reorder(reorderDto);
   }
 }

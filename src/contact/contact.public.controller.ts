@@ -6,6 +6,19 @@ import { Public } from '../auth/decorators/public.decorator';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import type { Request } from 'express';
 
+/**
+ * Extract the real client IP, accounting for reverse proxies.
+ * Returns null if no usable IP is found.
+ */
+function extractClientIp(request: Request): string | null {
+  // X-Forwarded-For can contain multiple IPs: "client, proxy1, proxy2"
+  const forwarded = request.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string') {
+    return forwarded.split(',')[0].trim();
+  }
+  return request.ip ?? null;
+}
+
 @Public()
 @ApiTags('Contact (Public)')
 @Controller('contact')
@@ -22,7 +35,7 @@ export class ContactPublicController {
     description: 'Rate limit exceeded — max 5 per hour',
   })
   async create(@Body() dto: CreateContactMessageDto, @Req() request: Request) {
-    const ipAddress = request.ip ?? 'unknown';
-    return this.contactService.create(dto, ipAddress);
+    const ipAddress = extractClientIp(request);
+    return this.contactService.create(dto, ipAddress ?? 'unknown');
   }
 }

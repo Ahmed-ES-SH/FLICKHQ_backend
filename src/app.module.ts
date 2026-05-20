@@ -14,6 +14,9 @@ import { MoviesModule } from './modules/movies/movies.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { JobsModule } from './modules/jobs/jobs.module';
+import { CategoriesModule } from './categories/categories.module';
+import { BlogModule } from './blog/blog.module';
+import { ProductsModule } from './products/products.module';
 
 // config files
 import { throttlerConfig } from './config/throttler.config';
@@ -74,6 +77,9 @@ const JWT_OPTIONS = {
     MoviesModule,
     PaymentsModule,
     JobsModule,
+    CategoriesModule,
+    BlogModule,
+    ProductsModule,
   ],
   controllers: [AppController],
   exports: [JwtModule],

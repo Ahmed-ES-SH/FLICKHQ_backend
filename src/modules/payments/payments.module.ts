@@ -5,7 +5,7 @@ import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
 import { PaymentsRepository } from './payments.repository';
 import { Payment } from './schema/payment.schema';
-import { User } from '../../user/schema/user.schema';
+import { User } from '../../user/schema/user.entity';
 import { StripeProvider } from '../../config/stripe.config';
 import { NotificationsModule } from '../../notifications/notifications.module';
 

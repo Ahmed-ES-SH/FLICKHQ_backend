@@ -1,4 +1,3 @@
-import { IsNotEmpty, IsString } from 'class-validator';
 import {
   Column,
   CreateDateColumn,
@@ -15,14 +14,14 @@ export class BlackList {
 
   @Column()
   @Index()
-  @IsString()
-  @IsNotEmpty()
   token: string;
 
   @Column()
-  @IsString()
-  @IsNotEmpty()
   userId: string;
+
+  @Column({ type: 'timestamp' })
+  @Index()
+  expiresAt: Date;
 
   @CreateDateColumn()
   createdAt: Date;

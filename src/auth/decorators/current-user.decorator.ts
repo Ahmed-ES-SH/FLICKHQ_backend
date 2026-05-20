@@ -1,8 +1,8 @@
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 import { RequestWithUser } from '../types/request.interface';
-import { User } from '../../user/schema/user.schema';
+import { User } from '../../user/schema/user.entity';
 
-type UserKey = keyof User;
+type UserKey = keyof Pick<User, 'id' | 'email' | 'role'>;
 
 export const GetUser = createParamDecorator(
   (data: UserKey | undefined, ctx: ExecutionContext): User | User[UserKey] => {
@@ -10,9 +10,9 @@ export const GetUser = createParamDecorator(
     const user = request.user;
 
     if (!user) {
-      return undefined as User[UserKey];
+      return undefined as unknown as User[UserKey];
     }
 
-    return data ? user[data] : user;
+    return data ? user[data] : (user as User);
   },
 );

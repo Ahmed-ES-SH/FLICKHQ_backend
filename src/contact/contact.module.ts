@@ -4,12 +4,10 @@ import { ContactMessage } from './schema/contact-message.schema';
 import { ContactService } from './contact.service';
 import { ContactController } from './contact.controller';
 import { ContactPublicController } from './contact.public.controller';
-import { AuthModule } from '../auth/auth.module';
-import { AuthGuard } from '../auth/guards/auth.guard';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([ContactMessage]), AuthModule],
+  imports: [TypeOrmModule.forFeature([ContactMessage])],
   controllers: [ContactController, ContactPublicController],
-  providers: [ContactService, AuthGuard],
+  providers: [ContactService],
 })
 export class ContactModule {}

@@ -15,7 +15,7 @@ import { WatchlistService } from './watchlist.service';
 import { AddToListDto } from '../dto/add-to-list.dto';
 import { PaginationDto } from '../dto/pagination.dto';
 import { GetUser } from '../../../auth/decorators/current-user.decorator';
-import { User } from '../../../user/schema/user.schema';
+import { User } from '../../../user/schema/user.entity';
 
 @Controller('api/v1/watchlist')
 @UseGuards(AuthGuard('jwt'))
@@ -30,7 +30,11 @@ export class WatchlistController {
     const page = pagination.page || 1;
     const limit = pagination.limit || 20;
 
-    const result = await this.watchlistService.getAll(user.id.toString(), page, limit);
+    const result = await this.watchlistService.getAll(
+      user.id.toString(),
+      page,
+      limit,
+    );
 
     return {
       data: result.data,

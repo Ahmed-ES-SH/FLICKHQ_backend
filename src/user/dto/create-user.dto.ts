@@ -1,6 +1,5 @@
 import {
   IsEmail,
-  IsEnum,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -8,11 +7,9 @@ import {
   Matches,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { UserRoleEnum } from 'src/auth/types/UserRoleEnum';
 
 export class CreateUserDto {
   @IsEmail()
-  @IsNotEmpty()
   @ApiProperty()
   email: string;
 
@@ -25,16 +22,6 @@ export class CreateUserDto {
   @IsOptional()
   @ApiProperty()
   avatar?: string;
-
-  @IsEnum(UserRoleEnum)
-  @IsOptional()
-  @ApiProperty()
-  role?: UserRoleEnum;
-
-  @IsString()
-  @IsOptional()
-  @ApiProperty()
-  googleId?: string;
 
   @IsString()
   @IsNotEmpty()

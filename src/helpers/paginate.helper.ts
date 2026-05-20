@@ -1,5 +1,5 @@
 // common/utils/pagination.util.ts
-import { ObjectLiteral, Repository } from 'typeorm';
+import { ObjectLiteral, Repository, FindManyOptions } from 'typeorm';
 
 // common/interfaces/paginated-result.interface.ts
 export interface PaginatedResult<T> {
@@ -14,7 +14,7 @@ export async function paginate<T extends ObjectLiteral>(
   repo: Repository<T>,
   page = 1,
   limit = 10,
-  options: any = {},
+  options: FindManyOptions<T> = {},
 ): Promise<PaginatedResult<T>> {
   const [data, total] = await repo.findAndCount({
     skip: (page - 1) * limit,

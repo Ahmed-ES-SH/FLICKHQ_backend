@@ -4,6 +4,7 @@ import {
   IsOptional,
   IsString,
   MinLength,
+  Matches,
 } from 'class-validator';
 import { UserRoleEnum } from '../../auth/types/UserRoleEnum';
 import { StatusEnum } from '../../auth/types/StatusEnum';
@@ -31,14 +32,17 @@ export class UpdateUserDto {
   role?: UserRoleEnum;
 
   @IsString()
-  @MinLength(6)
+  @MinLength(8)
+  @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/, {
+    message:
+      'Password must contain at least one lowercase letter, one uppercase letter, and one number',
+  })
   @IsOptional()
-  @ApiProperty()
+  @ApiProperty({
+    description:
+      'Password must be at least 8 characters with uppercase, lowercase, and number',
+  })
   password?: string;
-
-  @IsOptional()
-  @ApiProperty()
-  isEmailVerified?: boolean;
 
   @IsEnum(StatusEnum)
   @IsOptional()

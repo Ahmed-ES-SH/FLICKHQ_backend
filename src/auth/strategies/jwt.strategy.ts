@@ -3,24 +3,28 @@ import { PassportStrategy } from '@nestjs/passport';
 import { Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
 import { UserService } from '../../user/user.service';
-import { RequestWithToken } from '../guards/auth.guard';
-
-const cookieExtractor = (req: RequestWithToken): string | null => {
-  return req?.cookies?.['sanad_auth_token'] ?? null;
-};
+import { RequestWithUser } from '../types/request.interface';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
+  private readonly cookieName: string;
+
   constructor(
     private readonly configService: ConfigService,
     private readonly usersService: UserService,
   ) {
+    const cookieName =
+      configService.get<string>('AUTH_TOKEN') ?? 'sanad_auth_token';
+
     super({
-      jwtFromRequest: cookieExtractor,
+      jwtFromRequest: (req: RequestWithUser) =>
+        req?.cookies?.[cookieName] ?? null,
       ignoreExpiration: false,
       secretOrKey: configService.get<string>('JWT_SECRET')!,
       passReqToCallback: false,
     });
+
+    this.cookieName = cookieName;
   }
 
   async validate(payload: { id: number; email: string }) {

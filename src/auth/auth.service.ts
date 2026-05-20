@@ -5,25 +5,33 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   RequestTimeoutException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { LoginDto } from './dto/login.dto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { User } from '../user/schema/user.schema';
+import { User } from '../user/schema/user.entity';
 import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { UserService } from '../user/user.service';
-import { validateGoogleUserType } from './types/validateGoogleUser';
+import { ValidateGoogleUserInput } from './types/validateGoogleUser';
 import { MailService } from '../mail/mail.service';
 import { ResetPasswordDto } from './dto/reset-password.dto';
-import { verifyRestTokenDTO } from './dto/verify-rest-password-token.dto';
-import { sendResetPasswordDTO } from './dto/send-rest-password.dto';
-import { BlackList } from './schema/blacklisk-tokens.schema';
-import { logoutDTO } from './dto/logout.dto';
+import { VerifyResetTokenDto } from './dto/verify-reset-password-token.dto';
+import { SendResetPasswordDto } from './dto/send-reset-password.dto';
+import { BlackList } from './schema/blacklist-tokens.schema';
+import { LogoutDto } from './dto/logout.dto';
+import { UserRoleEnum } from './types/UserRoleEnum';
+
+// JWT expiry in hours — used to set blacklist token TTL
+const JWT_EXPIRY_HOURS = 24;
+const BLACKLIST_BUFFER_HOURS = 24;
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly userService: UserService,
     private readonly mailService: MailService,
@@ -34,11 +42,11 @@ export class AuthService {
     private readonly blackListRepo: Repository<BlackList>,
   ) {}
 
-  ////////////////////////////////////////////////////////////////////////////////////////
-  /////////// normal auth methods - login, logout, verify email, reset password
-  ////////////////////////////////////////////////////////////////////////////////////////
+  // MARK: Authentication — login / logout
 
-  async login(dto: LoginDto) {
+  async login(
+    dto: LoginDto,
+  ): Promise<{ user: Omit<User, 'password'>; access_token: string }> {
     const user = await this.userRepo.findOne({
       where: { email: dto.email },
       select: ['id', 'email', 'role', 'password', 'isEmailVerified', 'avatar'],
@@ -52,28 +60,56 @@ export class AuthService {
 
     if (!user.isEmailVerified) {
       await this.sendVerificationEmail(user);
-      throw new ForbiddenException('you need to verify your email first');
+      throw new ForbiddenException('You need to verify your email first');
     }
 
     const payload = { id: user.id, email: user.email, role: user.role };
-    const token = await this.jwtService.signAsync(payload);
+    const token = this.jwtService.sign(payload);
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password, ...userWithoutPassword } = user;
 
     return { user: userWithoutPassword, access_token: token };
   }
 
-  async sendRestPassword(dto: sendResetPasswordDTO) {
+  async logout(dto: LogoutDto, userId: string): Promise<{ message: string }> {
+    const { token } = dto;
+
+    // Set expiry so the blacklist table doesn't grow unbounded
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + JWT_EXPIRY_HOURS + BLACKLIST_BUFFER_HOURS);
+
+    await this.blackListRepo.save({ token, userId, expiresAt });
+    return { message: 'User logged out successfully' };
+  }
+
+  async isTokenBlacklisted(token: string): Promise<BlackList | null> {
+    return this.blackListRepo.findOne({ where: { token } });
+  }
+
+  // MARK: Password reset
+
+  async sendResetPassword(
+    dto: SendResetPasswordDto,
+  ): Promise<{ message: string }> {
     const user = await this.userRepo.findOne({ where: { email: dto.email } });
 
     if (user) {
       const token = this.generateToken();
       const hashedToken = await argon2.hash(token);
 
-      await this.addRestToken(user.id, hashedToken);
-
-      await this.mailService.sendRestPassword(user, token);
+      try {
+        await this.mailService.sendResetPassword(user, token);
+        await this.addResetToken(user.id, hashedToken);
+      } catch (error) {
+        this.logger.error(
+          'Password reset email failed — token not saved',
+          error instanceof Error ? error.stack : String(error),
+        );
+        // Re-throw so the caller knows the operation failed
+        throw new RequestTimeoutException(
+          'Failed to send reset email. Please try again.',
+        );
+      }
     }
 
     return {
@@ -82,19 +118,23 @@ export class AuthService {
     };
   }
 
-  async verifyRestToken(dto: verifyRestTokenDTO) {
+  async verifyResetToken(
+    dto: VerifyResetTokenDto,
+  ): Promise<{ message: string; userId: number }> {
     const { token, email } = dto;
 
     const user = await this.userRepo.findOne({
-      where: { email: email },
+      where: { email },
     });
 
     if (!user || !user.passwordResetToken) {
       throw new BadRequestException('Invalid token or user not found');
     }
 
-    const currentTime = new Date();
-    if (currentTime > user.passwordResetTokenExpiry!) {
+    if (
+      !user.passwordResetTokenExpiry ||
+      new Date() > user.passwordResetTokenExpiry
+    ) {
       throw new BadRequestException('Token has expired');
     }
 
@@ -107,7 +147,7 @@ export class AuthService {
     return { message: 'This token is valid', userId: user.id };
   }
 
-  async restPassword(dto: ResetPasswordDto) {
+  async resetPassword(dto: ResetPasswordDto): Promise<{ message: string }> {
     const { email, password, token } = dto;
     const user = await this.userRepo.findOne({
       where: { email },
@@ -123,7 +163,10 @@ export class AuthService {
       throw new BadRequestException('Invalid request');
     }
 
-    if (new Date() > user.passwordResetTokenExpiry!) {
+    if (
+      !user.passwordResetTokenExpiry ||
+      new Date() > user.passwordResetTokenExpiry
+    ) {
       throw new BadRequestException('Token has expired');
     }
 
@@ -132,29 +175,32 @@ export class AuthService {
       throw new BadRequestException('Invalid token');
     }
 
-    const hashPassword = await argon2.hash(password);
+    const hashedPassword = await argon2.hash(password);
 
-    user.password = hashPassword;
+    user.password = hashedPassword;
     user.passwordResetToken = null;
     user.passwordResetTokenExpiry = null;
 
     await this.userRepo.save(user);
 
-    return { message: 'password changed successfully' };
+    return { message: 'Password changed successfully' };
   }
 
-  async verifyEmail(token: string) {
+  // MARK: Email verification
+
+  async verifyEmail(token: string): Promise<{ message: string }> {
     if (!token) throw new BadRequestException('The token is required');
 
     const user = await this.userRepo.findOne({
       where: { emailVerificationToken: token },
     });
 
-    if (user?.isEmailVerified)
-      throw new BadRequestException('The user is already verified');
-
     if (!user) {
       throw new BadRequestException('Invalid or expired token');
+    }
+
+    if (user.isEmailVerified) {
+      throw new BadRequestException('The user is already verified');
     }
 
     user.isEmailVerified = true;
@@ -166,104 +212,88 @@ export class AuthService {
     return { message: 'Email verified successfully' };
   }
 
-  async logout(dto: logoutDTO, userId: string) {
-    const { token } = dto;
-    await this.blackListRepo.save({ token, userId });
-    return { message: 'User logged out successfully' };
-  }
+  // MARK: Google OAuth
 
-  async isTokenBlacklisted(token: string) {
-    const isTokenBlacklisted = await this.blackListRepo.findOne({
-      where: { token },
-    });
-    return isTokenBlacklisted;
-  }
-
-  /////////////////////////////////////////////////////////////////
-  /////////// validate google user
-  /////////////////////////////////////////////////////////////////
   async validateGoogleUser({
     googleId,
     email,
     name,
     avatar,
-  }: validateGoogleUserType) {
+  }: ValidateGoogleUserInput): Promise<{
+    access_token: string;
+    user: User;
+  }> {
     if (!email) throw new UnauthorizedException('No email from Google');
 
     let user = await this.userRepo.findOne({
-      where: { googleId: googleId },
+      where: { googleId },
     });
 
     if (!user) {
       user = await this.userRepo.findOne({ where: { email } });
       if (user) {
+        // Existing user without Google link — link the account
         user.googleId = googleId;
         user.avatar = avatar;
         user.name = name;
         user.isEmailVerified = true;
         user = await this.userRepo.save(user);
       } else {
+        // New user — create with explicit role
         user = await this.userRepo.save({
           email,
           googleId,
           name,
           avatar,
           isEmailVerified: true,
+          role: UserRoleEnum.USER,
         });
       }
     }
 
-    const payload = { id: user?.id, email: user?.email, role: user?.role };
-    const access_token = await this.jwtService.signAsync(payload);
+    const payload = { id: user.id, email: user.email, role: user.role };
+    const access_token = this.jwtService.sign(payload);
 
     return { access_token, user };
   }
 
-  /////////////////////////////////////////////////////////////////
-  /////////// private methods
-  /////////////////////////////////////////////////////////////////
+  // MARK: Private helpers
 
-  private async addVerificationToken(userId: number, token: string) {
+  private async addVerificationToken(userId: number, token: string): Promise<void> {
     const expiry = new Date();
-    expiry.setHours(expiry.getHours() + 1); // 1hour
+    expiry.setHours(expiry.getHours() + 1);
 
     await this.userRepo.update(userId, {
       emailVerificationToken: token,
       emailVerificationTokenExpiry: expiry,
       isEmailVerified: false,
     });
-
-    return token;
   }
 
-  private async addRestToken(userId: number, token: string) {
+  private async addResetToken(userId: number, token: string): Promise<void> {
     const expiry = new Date();
-    expiry.setHours(expiry.getHours() + 1); // 1hour
+    expiry.setHours(expiry.getHours() + 1);
 
     await this.userRepo.update(userId, {
       passwordResetToken: token,
       passwordResetTokenExpiry: expiry,
     });
-
-    return token;
   }
 
-  private async sendVerificationEmail(user: User) {
+  private async sendVerificationEmail(user: User): Promise<void> {
     try {
       const token = await this.mailService.sendVerificationEmail(user);
       await this.addVerificationToken(user.id, token);
     } catch (error) {
-      console.log(error);
+      this.logger.error(
+        'Verification email failed',
+        error instanceof Error ? error.stack : String(error),
+      );
       throw new RequestTimeoutException();
     }
   }
 
-  private generateToken() {
-    const token = crypto.randomBytes(32).toString('hex');
-
-    const expiry = new Date();
-    expiry.setHours(expiry.getHours() + 1); // 1hour
-
-    return token;
+  private generateToken(): string {
+    return crypto.randomBytes(32).toString('hex');
   }
 }

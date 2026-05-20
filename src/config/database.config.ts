@@ -10,13 +10,14 @@
  * - DB_SSL_CERT: (optional) SSL certificate for production
  */
 
-import { User } from '../user/schema/user.schema';
+import { User } from '../user/schema/user.entity';
 import { DataSourceOptions, DataSource } from 'typeorm';
 import { config } from 'dotenv';
-import { BlackList } from '../auth/schema/blacklisk-tokens.schema';
+import { BlackList } from '../auth/schema/blacklist-tokens.schema';
 import { ContactMessage } from '../contact/schema/contact-message.schema';
 import { Article } from '../blog/schema/article.schema';
 import { Category } from '../categories/schema/category.schema';
+import { Product } from '../products/schema/product.schema';
 import { Notification } from '../notifications/schema/notification.schema';
 import { NotificationPreferences } from '../notifications/schema/notification-preferences.schema';
 import { Movie } from '../modules/movies/schema/movie.schema';
@@ -57,6 +58,7 @@ export const databaseConfig: DataSourceOptions = {
     ContactMessage,
     Article,
     Category,
+    Product,
     Notification,
     NotificationPreferences,
     Movie,

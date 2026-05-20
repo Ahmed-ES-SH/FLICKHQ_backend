@@ -7,10 +7,13 @@ import {
   Index,
   OneToMany,
 } from 'typeorm';
+import { Exclude } from 'class-transformer';
 import { Article } from '../../blog/schema/article.schema';
+import { Product } from '../../products/schema/product.schema';
 
 @Entity('categories')
 @Index(['slug'], { unique: true })
+@Index(['name'], { unique: true })
 @Index(['order'])
 export class Category {
   @PrimaryGeneratedColumn('uuid')
@@ -41,5 +44,10 @@ export class Category {
   updatedAt: Date;
 
   @OneToMany(() => Article, (article) => article.category)
+  @Exclude()
   articles: Article[];
+
+  @OneToMany(() => Product, (product) => product.category)
+  @Exclude()
+  products: Product[];
 }
