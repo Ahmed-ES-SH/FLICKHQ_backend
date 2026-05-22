@@ -1,5 +1,5 @@
 /**
- * Rate Limiting Configuration for Flick HQ Backend
+ * Rate Limiting Configuration for CYPHER Backend
  *
  * This file configures request rate limiting using @nestjs/throttler.
  * Helps prevent abuse and protects the API from DDoS attacks.

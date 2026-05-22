@@ -1,5 +1,5 @@
 /**
- * Stripe Configuration for Flick HQ Backend
+ * Stripe Configuration for CYPHER Backend
  *
  * This file configures the Stripe SDK for payment processing.
  *

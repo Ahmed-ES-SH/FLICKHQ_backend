@@ -1,5 +1,5 @@
 /**
- * Cache Configuration for Flick HQ Backend
+ * Cache Configuration for CYPHER Backend
  *
  * This file configures the caching layer using @nestjs/cache-manager.
  * Cache helps reduce database load and improves response times.

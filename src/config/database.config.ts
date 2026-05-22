@@ -1,5 +1,5 @@
 /**
- * Database Configuration for Flick HQ Backend
+ * Database Configuration for CYPHER Backend
  *
  * This file configures the PostgreSQL connection using TypeORM.
  * All configuration is loaded from environment variables.
@@ -20,9 +20,15 @@ import { Category } from '../categories/schema/category.schema';
 import { Product } from '../products/schema/product.schema';
 import { Notification } from '../notifications/schema/notification.schema';
 import { NotificationPreferences } from '../notifications/schema/notification-preferences.schema';
-import { Movie } from '../modules/movies/schema/movie.schema';
-import { UserList } from '../modules/lists/schema/user-list.schema';
-import { Payment } from '../modules/payments/schema/payment.schema';
+import { Payment } from '../payments/schema/payment.schema';
+import { Order } from '../orders/schema/order.schema';
+import { OrderItem } from '../orders/schema/order-item.schema';
+import { Refund } from '../payments/schema/refund.schema';
+import { Cart } from '../cart/schema/cart.schema';
+import { CartItem } from '../cart/schema/cart-item.schema';
+import { WebhookEvent } from '../payments/schema/webhook-event.schema';
+import { OutboxEvent } from '../payments/schema/outbox-event.schema';
+import { CheckoutSessionState } from '../payments/schema/checkout-session-state.schema';
 
 // Load environment variables from .env file
 config({ path: '.env' });
@@ -61,9 +67,15 @@ export const databaseConfig: DataSourceOptions = {
     Product,
     Notification,
     NotificationPreferences,
-    Movie,
-    UserList,
     Payment,
+    Order,
+    OrderItem,
+    Refund,
+    Cart,
+    CartItem,
+    WebhookEvent,
+    OutboxEvent,
+    CheckoutSessionState,
   ],
 
   // ⚠️ IMPORTANT: Always false in production!

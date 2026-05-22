@@ -76,7 +76,9 @@ export class AuthService {
 
     // Set expiry so the blacklist table doesn't grow unbounded
     const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + JWT_EXPIRY_HOURS + BLACKLIST_BUFFER_HOURS);
+    expiresAt.setHours(
+      expiresAt.getHours() + JWT_EXPIRY_HOURS + BLACKLIST_BUFFER_HOURS,
+    );
 
     await this.blackListRepo.save({ token, userId, expiresAt });
     return { message: 'User logged out successfully' };
@@ -259,7 +261,10 @@ export class AuthService {
 
   // MARK: Private helpers
 
-  private async addVerificationToken(userId: number, token: string): Promise<void> {
+  private async addVerificationToken(
+    userId: number,
+    token: string,
+  ): Promise<void> {
     const expiry = new Date();
     expiry.setHours(expiry.getHours() + 1);
 

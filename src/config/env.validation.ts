@@ -11,7 +11,6 @@
  * - DATABASE_URL: PostgreSQL connection string
  * - JWT_SECRET: JWT signing key
  * - JWT_EXPIRES_IN: Token expiration time
- * - TMDB_API_KEY: The Movie Database API key
  *
  * Optional variables:
  * - STRIPE_SECRET_KEY: Stripe payment processing
@@ -97,13 +96,6 @@ export const validationSchema = Joi.object({
   // ===================
   // TMDB API
   // ===================
-
-  /**
-   * The Movie Database API key
-   * Required for movie data fetching
-   * Get from: https://www.themoviedb.org/settings/api
-   */
-  TMDB_API_KEY: Joi.string().required(),
 
   // ===================
   // STRIPE (Optional)

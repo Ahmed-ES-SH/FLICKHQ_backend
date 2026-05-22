@@ -71,10 +71,10 @@ async function bootstrap() {
 
   // Swagger documentation
   const config = new DocumentBuilder()
-    .setTitle('Flick HQ API')
-    .setDescription('The Flick HQ movie platform API description')
+    .setTitle('CYPHER API')
+    .setDescription('The CYPHER movie platform API description')
     .setVersion('1.0')
-    .addTag('movies')
+    .addTag('CYPHER')
     .addTag('auth')
     .addTag('payments')
     .addBearerAuth()
@@ -84,6 +84,8 @@ async function bootstrap() {
 
   // Graceful shutdown
   app.enableShutdownHooks();
+
+  app.setGlobalPrefix('api');
 
   const port = process.env.PORT || 3000;
   await app.listen(port);

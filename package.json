@@ -108,6 +108,9 @@
       "**/*.(t|j)s"
     ],
     "coverageDirectory": "../coverage",
-    "testEnvironment": "node"
+    "testEnvironment": "node",
+    "transformIgnorePatterns": [
+      "<rootDir>/node_modules/(?!(uuid)/)"
+    ]
   }
 }

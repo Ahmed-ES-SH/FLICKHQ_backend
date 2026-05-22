@@ -147,9 +147,7 @@ export async function seedArticles(
 
   for (const apiPost of apiPosts) {
     const slug = slugify(apiPost.title);
-    const uniqueSlug = existingSlugs.has(slug)
-      ? `${slug}-${apiPost.id}`
-      : slug;
+    const uniqueSlug = existingSlugs.has(slug) ? `${slug}-${apiPost.id}` : slug;
 
     if (existingSlugs.has(uniqueSlug)) {
       skipped++;
@@ -163,7 +161,9 @@ export async function seedArticles(
     }
 
     const categorySlug = categorySlugs[apiPost.id % categorySlugs.length];
-    const categoryId = categorySlug ? slugToIdMap.get(categorySlug) ?? null : null;
+    const categoryId = categorySlug
+      ? (slugToIdMap.get(categorySlug) ?? null)
+      : null;
 
     const article: Partial<Article> = {
       title: apiPost.title,

@@ -14,7 +14,7 @@ function extractClientIp(request: Request): string | null {
   // X-Forwarded-For can contain multiple IPs: "client, proxy1, proxy2"
   const forwarded = request.headers['x-forwarded-for'];
   if (typeof forwarded === 'string') {
-    return forwarded.split(',')[0].trim();
+    return forwarded.split(',')[0]?.trim() ?? null;
   }
   return request.ip ?? null;
 }

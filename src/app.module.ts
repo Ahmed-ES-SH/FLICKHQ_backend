@@ -8,15 +8,15 @@ import { APP_GUARD } from '@nestjs/core';
 import { AuthModule } from './auth/auth.module';
 import { UserModule } from './user/user.module';
 import { MailerModule } from '@nestjs-modules/mailer';
-import { ListsModule } from './modules/lists/lists.module';
 import { NotificationsModule } from './notifications/notifications.module';
-import { MoviesModule } from './modules/movies/movies.module';
-import { PaymentsModule } from './modules/payments/payments.module';
+import { PaymentsModule } from './payments/payments.module';
 import { ScheduleModule } from '@nestjs/schedule';
-import { JobsModule } from './modules/jobs/jobs.module';
 import { CategoriesModule } from './categories/categories.module';
 import { BlogModule } from './blog/blog.module';
 import { ProductsModule } from './products/products.module';
+import { CartModule } from './cart/cart.module';
+import { OrderModule } from './orders/order.module';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 
 // config files
 import { throttlerConfig } from './config/throttler.config';
@@ -62,6 +62,7 @@ const JWT_OPTIONS = {
       validationSchema,
     }),
     ScheduleModule.forRoot(),
+    EventEmitterModule.forRoot(),
     TypeOrmModule.forRoot(databaseConfig),
     ThrottlerModule.forRoot(throttlerConfig),
     MailerModule.forRootAsync(MAIL_OPTIONS),
@@ -72,14 +73,13 @@ const JWT_OPTIONS = {
     AuthModule,
     UserModule,
     MailModule,
-    ListsModule,
     NotificationsModule,
-    MoviesModule,
     PaymentsModule,
-    JobsModule,
     CategoriesModule,
     BlogModule,
     ProductsModule,
+    CartModule,
+    OrderModule,
   ],
   controllers: [AppController],
   exports: [JwtModule],

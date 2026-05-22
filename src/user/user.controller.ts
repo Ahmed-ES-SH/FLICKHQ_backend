@@ -19,7 +19,6 @@ import { User } from './schema/user.entity';
 import { Roles } from 'src/auth/decorators/Roles.decorator';
 import { UserRoleEnum } from 'src/auth/types/UserRoleEnum';
 import { RolesGuard } from 'src/auth/guards/roles.guard';
-import { AuthGuard } from 'src/auth/guards/auth.guard';
 import { Public } from 'src/auth/decorators/public.decorator';
 import { FilterOptionsDto } from './dto/filter-options.dto';
 import { PaginatedResult } from 'src/helpers/paginate.helper';
@@ -74,7 +73,7 @@ export class UserController {
   }
 
   @ApiBearerAuth()
-  @UseGuards(AuthGuard, RolesGuard)
+  @UseGuards(RolesGuard)
   @Get()
   @Roles(UserRoleEnum.ADMIN)
   @ApiOperation({
@@ -98,7 +97,7 @@ export class UserController {
 
   @ApiBearerAuth()
   @Get('stats')
-  @UseGuards(AuthGuard, RolesGuard)
+  @UseGuards(RolesGuard)
   @Roles(UserRoleEnum.ADMIN)
   @ApiOperation({ summary: 'Get user statistics (Admin only)' })
   @ApiResponse({
@@ -118,7 +117,6 @@ export class UserController {
   }
 
   @ApiBearerAuth()
-  @UseGuards(AuthGuard)
   @Get(':id')
   @ApiParam({ name: 'id', type: Number, description: 'User ID' })
   @ApiOperation({
@@ -145,7 +143,6 @@ export class UserController {
   }
 
   @ApiBearerAuth()
-  @UseGuards(AuthGuard)
   @Patch(':id')
   @ApiParam({ name: 'id', type: Number, description: 'User ID' })
   @ApiOperation({
@@ -173,7 +170,7 @@ export class UserController {
   }
 
   @ApiBearerAuth()
-  @UseGuards(AuthGuard, RolesGuard)
+  @UseGuards(RolesGuard)
   @Delete(':id')
   @Roles(UserRoleEnum.ADMIN)
   @ApiParam({ name: 'id', type: Number, description: 'User ID' })

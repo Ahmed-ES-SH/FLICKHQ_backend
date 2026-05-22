@@ -1,863 +1,270 @@
-# Plan: Refactor Notifications Module to Use Pusher (Serverless-Optimized)
+# Plan: Build Cart Module & Rebuild Payments Module with Stripe Best Practices
 
 ## Overview
-Migrate the notifications module from Socket.IO to Pusher for real-time communication, optimized for Vercel serverless deployment. This plan addresses security, reliability, and production-readiness while respecting serverless constraints.
-
-## Current State
-- **Gateway**: `notifications.gateway.ts` uses Socket.IO (`@nestjs/websockets`, `socket.io`)
-- **Module**: `notifications.module.ts` exports `NotificationsGateway`
-- **Service**: `notifications.service.ts` calls gateway methods (`emitToUser`, `emitReadUpdate`, etc.)
-- **Environment**: Pusher keys already configured:
-  - `PUSHER_APP_ID`
-  - `PUSHER_KEY`
-  - `PUSHER_SECRET`
-  - `PUSHER_CLUSTER`
-- **Dependencies**: `socket.io` is in `package.json` but should be removed after migration
-- **Config**: `ws.config.ts` contains Socket.IO adapter configuration
-- **Deployment Target**: Vercel serverless functions
+This plan covers building a new **Cart Module** from scratch and **rebuilding the Payments Module** to follow Stripe best practices (API version 2026-04-22.dahlia), with a focus on robust webhook handling, Checkout Sessions pattern, and separation of concerns.
 
 ---
 
-## Serverless Architecture Rationale
+## Phase 1: Cart Module
 
-### Why Pusher Over Socket.IO on Vercel
-- **Socket.IO requires persistent connections**: Vercel serverless functions are ephemeral, terminating after each request. WebSocket connections cannot be maintained.
-- **Pusher is managed infrastructure**: Pusher handles persistent WebSocket connections to clients independently of backend execution.
-- **Serverless-compatible**: Pusher events are triggered via HTTP API calls, which work perfectly with stateless functions.
-- **No backend WebSocket server needed**: Eliminates need for long-running processes.
+### 1.1 Database Schema (`src/cart/schema/cart-item.schema.ts`)
+- **Cart Entity**: `id`, `userId` (FK to users, unique), `createdAt`, `updatedAt`
+- **CartItem Entity**: `id`, `cartId` (FK to carts), `productId` (FK to products), `quantity`, `createdAt`, `updatedAt`
+- Indexes: `userId` unique on Cart, composite unique on `cartId + productId`
+- Soft deletes not needed; cart is ephemeral
 
-### WebSocket Limitations in Serverless
-- Serverless functions execute per-request and terminate immediately after response
-- Cannot maintain persistent WebSocket connections to clients
-- Cannot run background workers or long-running processes
-- In-memory state is lost between invocations
-- Cold starts add latency to first request
+### 1.2 DTOs (`src/cart/dto/`)
+- `AddToCartDto`: `productId` (UUID, validated), `quantity` (int, min 1, max 100)
+- `UpdateCartItemDto`: `quantity` (int, min 1, max 100)
+- `CartResponseDto`: Cart with items, product details (price, title, thumbnail, stock), subtotal per item, cart total
 
-### Why Managed Realtime Infrastructure
-- Pusher manages connection lifecycle, reconnection, and scaling
-- Backend only needs to trigger events via HTTP (stateless)
-- Horizontal scaling is automatic (no sticky sessions needed)
-- Better reliability than self-hosted WebSocket servers on serverless
+### 1.3 Repository (`src/cart/cart.repository.ts`)
+- `findByUserId(userId)`: Load cart with items and product relations
+- `findOrCreate(userId)`: Get or create cart for user
+- `addItem(cartId, productId, quantity)`: Insert or update quantity
+- `updateItemQuantity(cartId, productId, quantity)`: Update quantity
+- `removeItem(cartId, productId)`: Delete cart item
+- `clearCart(cartId)`: Delete all items
+- `calculateTotal(cartId)`: Sum of (price * quantity) for all items
 
-### Serverless Execution Impact
-- All logic must execute within request lifecycle (typically 10s timeout on Vercel)
-- No background daemons or workers
-- Retry logic must be inline (not queue-based)
-- Database connections must be pooled efficiently
-- State must be external (database, cache, not memory)
+### 1.4 Service (`src/cart/cart.service.ts`)
+- `addToCart(userId, dto)`: Find/create cart, validate product exists & in stock, add/update item
+- `updateCartItem(userId, productId, dto)`: Update quantity, validate stock
+- `removeFromCart(userId, productId)`: Remove item
+- `clearCart(userId)`: Clear all items
+- `getCart(userId)`: Return cart with items, product details, calculated totals
+- Stock validation: reject if quantity > product.stock
+- Price fetched from Product entity at cart time; final price validated at checkout
 
----
+### 1.5 Controllers (`src/cart/`)
+- **CartController** (`cart.controller.ts`): Authenticated routes
+  - `GET /cart` - Get user's cart
+  - `POST /cart/items` - Add item to cart
+  - `PATCH /cart/items/:productId` - Update item quantity
+  - `DELETE /cart/items/:productId` - Remove item
+  - `DELETE /cart` - Clear cart
+- All routes use `@GetUser('id')` decorator, `@UseGuards(AuthGuard)`
+- Swagger annotations on all endpoints
 
-## Pre-Implementation Audit
-
-### Step 0: Verify Socket.IO Usage Across Codebase
-Before removing Socket.IO, audit all modules to ensure no other features depend on it:
-- Search for `@WebSocketGateway`, `SubscribeMessage`, `WebSocketServer` decorators
-- Search for `socket.io` imports across `src/`
-- Check for: chat, live updates, typing indicators, admin dashboards, collaborative features
-- **Decision Point**: If Socket.IO is used elsewhere, keep it and only refactor notifications module
-- **Current Understanding**: Based on AGENTS.md, Socket.IO was already removed and migrated to Pusher, but gateway code still references it
-
----
-
-## Phase 1: Install Pusher Dependencies
-
-1. Add `pusher` (Node.js server SDK) using pnpm:
-   ```bash
-   pnpm add pusher
-   ```
-
-2. Verify `pusher-js` availability (client SDK for frontend migration)
+### 1.6 Module (`src/cart/cart.module.ts`)
+- Imports: `TypeOrmModule.forFeature([Cart, CartItem, Product])`
+- Providers: `CartService`, `CartRepository`
+- Controllers: `CartController`
+- Exports: `CartService` (needed by Payments module for checkout)
 
 ---
 
-## Phase 2: Create Pusher Configuration
+## Phase 2: Payments Module Rebuild
 
-### 2.1 Create `src/config/pusher.config.ts`
-```typescript
-- Export Pusher configuration factory using ConfigService
-- Read PUSHER_APP_ID, PUSHER_KEY, PUSHER_SECRET, PUSHER_CLUSTER from environment
-- Configure Pusher with:
-  - cluster: PUSHER_CLUSTER
-  - appId: PUSHER_APP_ID
-  - key: PUSHER_KEY
-  - secret: PUSHER_SECRET
-  - useTLS: true (production)
-- Export typed Pusher instance provider
-- Singleton pattern for serverless (reuse across cold starts)
-```
+### 2.1 Architecture Decision: Checkout Sessions over raw PaymentIntents
+Per Stripe best practices:
+- **Checkout Sessions** is preferred for on-session payments (handles taxes, dynamic payment methods, adaptive UX)
+- **PaymentIntents** only for off-session payments or when modeling checkout state independently
+- **Omit `payment_method_types`** entirely to enable dynamic payment methods
+- Use **restricted API keys (RAKs)** with minimum permissions
 
-### 2.2 Update `src/config/env.validation.ts`
-```typescript
-- Add validation for Pusher environment variables:
-  - PUSHER_APP_ID: Joi.string().required()
-  - PUSHER_KEY: Joi.string().required()
-  - PUSHER_SECRET: Joi.string().required()
-  - PUSHER_CLUSTER: Joi.string().valid('us2', 'eu', 'ap1', 'ap2', 'ap3', 'mt1').required()
-```
+### 2.2 Updated Schema (`src/modules/payments/schema/payment.schema.ts`)
+Add fields:
+- `stripeCheckoutSessionId` (nullable, for Checkout Sessions)
+- `stripeCustomerId` (for tracking)
+- `cartSnapshot` (JSONB - store cart items at checkout time for audit)
+- `lineItems` (JSONB - Stripe line items snapshot)
+- Keep existing: `id`, `userId`, `stripePaymentIntent`, `stripeChargeId`, `amount`, `currency`, `status`, `description`, `metadata`, `idempotencyKey`, timestamps
 
-### 2.3 Update `.env.example`
-```bash
-# ==========================================
-# PUSHER - Real-time Communication (required)
-# ==========================================
-# Get credentials from: https://dashboard.pusher.com/
-PUSHER_APP_ID=your-app-id
-PUSHER_KEY=your-app-key
-PUSHER_SECRET=your-app-secret
-PUSHER_CLUSTER=eu
-```
+### 2.3 Updated Stripe Types (`src/modules/payments/types/stripe.types.ts`)
+Add:
+- `StripeCheckoutSession` interface
+- `StripeSubscription` interface (if recurring billing needed)
+- Type guards for new types
+- Update `StripeWebhookEvent` to handle all event types
 
----
+### 2.4 Updated DTOs (`src/modules/payments/dto/`)
+- `CreateCheckoutSessionDto`: 
+  - `cartId` (optional - if using cart)
+  - `productType` (optional - for direct premium subscription)
+  - `successUrl`, `cancelUrl` (validated URLs)
+  - `mode`: `'payment' | 'subscription'`
+- Keep `CreatePaymentIntentDto` for off-session or direct payment flows
 
-## Phase 3: Create Pusher Service with Inline Retry
+### 2.5 Service (`src/modules/payments/payments.service.ts`)
 
-### 3.1 Create `src/notifications/pusher.service.ts`
+#### New Methods:
+- `createCheckoutSession(userId, dto)`: 
+  - Load cart items or product type
+  - Build line items with server-side prices (NEVER trust client)
+  - Create Stripe Checkout Session with:
+    - `mode`: payment or subscription
+    - `customer` (existing or create)
+    - `line_items` with price data
+    - `success_url`, `cancel_url`
+    - `metadata` with userId
+    - NO `payment_method_types` (dynamic)
+  - Persist payment record with session ID
+  - Return `{ url: session.url, sessionId }`
 
-**Core Features:**
-- Injectable service wrapping Pusher SDK
-- Initialize Pusher instance with configuration
-- Implement inline retry strategy (serverless-compatible)
-- Structured logging for all operations
-- Lightweight startup validation
+- `handleCheckoutSessionCompleted(session)`: 
+  - Find payment by session ID
+  - Update status to SUCCEEDED
+  - Clear user's cart
+  - Update user premium status (if applicable)
+  - Emit notifications
 
-**Methods:**
-```typescript
-- emitToUser(userId: string, payload: NotificationPayload): Promise<void>
-- emitReadUpdate(userId: string, notificationId: string): Promise<void>
-- emitReadAllUpdate(userId: string): Promise<void>
-- emitCountUpdate(userId: string, unreadCount: number): Promise<void>
-- emitDelete(userId: string, notificationId: string): Promise<void>
-- emitPaymentStatus(userId: string, payload: PaymentStatusPayload): Promise<void>
-- broadcast(payload: BroadcastPayload): Promise<void>
-```
+#### Updated Webhook Handler:
+Handle these events (per Stripe best practices):
+- `checkout.session.completed` - Primary success event
+- `payment_intent.succeeded` - Fallback for direct PaymentIntent flows
+- `payment_intent.payment_failed` - Payment failure
+- `charge.refunded` - Refund handling
+- `customer.subscription.created` - If subscriptions used
+- `customer.subscription.deleted` - Subscription cancellation
+- `invoice.payment_succeeded` - Recurring billing
+- `invoice.payment_failed` - Recurring billing failure
 
-**Channel Naming (Private Channels):**
-- Format: `private-user-{userId}`
-- Example: `private-user-abc123-def456`
-- Security: Only authenticated user can subscribe to their own channel
+#### Webhook Security:
+- Verify signature using `STRIPE_WEBHOOK_SECRET`
+- Idempotency: check if event already processed (store event IDs)
+- Return 200 quickly, process asynchronously if heavy
+- Log all events for audit trail
 
-**Inline Retry Strategy (Serverless-Compatible):**
-```typescript
-- Max 3 retries with exponential backoff
-- Backoff delays: 500ms, 1000ms, 2000ms (short for serverless)
-- Total retry time: ~3.5s (within Vercel 10s timeout)
-- Use Promise-based delay (setTimeout wrapped in Promise)
-- Log each retry attempt with structured logging
-- If all retries fail:
-  - Log failure with error details
-  - Notification already saved to DB (graceful degradation)
-  - Frontend can poll REST API as fallback
-```
+### 2.6 Updated Controller (`src/modules/payments/payments.controller.ts`)
+- `POST /payments/checkout-session` - Create Checkout Session
+- `POST /payments/webhook` - Handle Stripe webhooks (unchanged, SkipThrottle)
+- `GET /payments/history` - Payment history (unchanged)
+- Add Swagger annotations
+- Raw body handling for webhook (ensure NestJS configured with `rawBody: true`)
 
-**Idempotency:**
-- Generate unique event ID for each trigger (UUID v4)
-- Include `eventId` in all payloads
-- Frontend can deduplicate using `eventId`
+### 2.7 Updated Repository (`src/modules/payments/payments.repository.ts`)
+- `findByCheckoutSessionId(sessionId)`: Find by session ID
+- `markEventProcessed(eventId)`: Track processed webhook events for idempotency
+- `isEventProcessed(eventId)`: Check for duplicate events
 
-**Logging:**
-- Success: `{ event, channel, userId, eventId, latency: number, status: 'success' }`
-- Failure: `{ event, channel, userId, eventId, error, attempt, maxAttempts, status: 'failed' }`
-- Retry: `{ event, channel, userId, eventId, attempt, delay, status: 'retrying' }`
-- Auth failure: `{ channel, userId, reason, status: 'auth_failed' }`
-
-**No BullMQ or Queue Dependencies:**
-- All logic executes inline within request lifecycle
-- No background workers or persistent processes
-- Database persistence serves as fallback if Pusher fails
+### 2.8 Webhook Event Tracking Schema
+Add `webhook_events` table:
+- `id`, `stripeEventId` (unique), `eventType`, `processedAt`, `createdAt`
+- Prevents duplicate processing from webhook retries
 
 ---
 
-## Phase 4: Create Pusher Authentication Endpoint
+## Phase 3: Integration & Infrastructure
 
-### 4.1 Create `src/notifications/pusher.auth.controller.ts`
+### 3.1 Module Registration
+- Register `CartModule` in `app.module.ts`
+- Update `PaymentsModule` to import `CartModule`
+- Ensure `TypeOrmModule.forFeature` includes new entities
 
-**Purpose:** Authenticate private channel subscriptions
+### 3.2 Migration
+- Generate migration for: `carts`, `cart_items`, `webhook_events` tables
+- Add columns to existing `payments` table
+- Migration name: `add-cart-and-webhook-tracking`
 
-**Endpoint:**
-```typescript
-POST /pusher/auth
-Content-Type: application/json
-Authorization: Bearer <JWT_TOKEN>
+### 3.3 Environment Variables
+Add to env validation:
+- `STRIPE_WEBHOOK_SECRET` (required for webhook verification)
+- `STRIPE_SUCCESS_URL` (default success redirect)
+- `STRIPE_CANCEL_URL` (default cancel redirect)
+- `FRONTEND_URL` (for constructing URLs)
 
-Request Body:
-{
-  "channel_name": "private-user-abc123",
-  "socket_id": "12345.67890"
-}
+### 3.4 Stripe Configuration Updates
+- Update `StripeProvider` to use RAK (restricted API key) pattern
+- Add IP allowlist recommendation in docs
+- Configure webhook endpoint in Stripe Dashboard:
+  - URL: `/payments/webhook`
+  - Events: `checkout.session.completed`, `payment_intent.*`, `charge.refunded`, `customer.subscription.*`, `invoice.*`
 
-Response:
-{
-  "auth": "app_key:signature"
-}
-```
-
-**Implementation:**
-```typescript
-- Validate JWT token from Authorization header
-- Extract userId from JWT payload
-- Parse channel_name to extract requested userId
-- Verify: authenticated userId === requested userId
-- If mismatch: return 403 Forbidden with logging
-- If match: generate Pusher auth signature using Pusher SDK
-- Return auth signature to client
-- Log all authorization attempts (success/failure)
-- Stateless: no session or in-memory state required
-```
-
-**Security:**
-- JWT validation using existing JwtService
-- Channel ownership verification (critical security check)
-- Rate limiting via existing throttler (if configured)
-- Structured logging for audit trail
-- Stateless design (serverless-compatible)
+### 3.5 Jobs Module Integration
+- Update stale payment reconciliation job to handle Checkout Sessions
+- Add cart cleanup job (abandoned carts older than X days)
 
 ---
 
-## Phase 5: Refactor Notifications Gateway
+## Phase 4: Testing & Validation
 
-### 5.1 Update `src/notifications/notifications.gateway.ts`
+### 4.1 Unit Tests
+- `cart.service.spec.ts`: Test all cart operations, stock validation, price calculation
+- `payments.service.spec.ts`: Test checkout session creation, webhook handling, idempotency
+- Mock Stripe SDK responses
 
-**Changes:**
-- Remove Socket.IO imports (`@nestjs/websockets`, `socket.io`)
-- Remove `@WebSocketGateway()` decorator
-- Remove `OnGatewayConnection`, `OnGatewayDisconnect` interfaces
-- Remove `@SubscribeMessage` decorators
-- Remove `handleConnection`, `handleDisconnect` methods
-- Remove Socket.IO typed types (`TypedWsServer`, `TypedWsSocket`)
-- Remove `WsJwtGuard` (no longer needed)
-- Inject `PusherService` instead of using `Server`
+### 4.2 E2E Tests
+- Cart flow: add, update, remove, clear, get
+- Checkout flow: create session, mock webhook completion
+- Webhook security: invalid signature, duplicate events
 
-**New Implementation:**
-```typescript
-@Injectable()
-export class NotificationsGateway {
-  constructor(
-    private readonly pusherService: PusherService,
-  ) {}
-
-  // Delegate all emit methods to PusherService (async)
-  async emitToUser(userId: string, payload: unknown): Promise<void> {
-    await this.pusherService.emitToUser(userId, payload);
-  }
-
-  async emitReadUpdate(userId: string, notificationId: string): Promise<void> {
-    await this.pusherService.emitReadUpdate(userId, notificationId);
-  }
-
-  async emitReadAllUpdate(userId: string): Promise<void> {
-    await this.pusherService.emitReadAllUpdate(userId);
-  }
-
-  async emitCountUpdate(userId: string, unreadCount: number): Promise<void> {
-    await this.pusherService.emitCountUpdate(userId, unreadCount);
-  }
-
-  async emitDelete(userId: string, notificationId: string): Promise<void> {
-    await this.pusherService.emitDelete(userId, notificationId);
-  }
-
-  async emitPaymentStatus(userId: string, payload: PaymentStatusPayload): Promise<void> {
-    await this.pusherService.emitPaymentStatus(userId, payload);
-  }
-
-  async broadcast(payload: unknown): Promise<void> {
-    await this.pusherService.broadcast(payload);
-  }
-}
-```
-
-**Event Names (unchanged for backward compatibility):**
-- `notification:new`
-- `notification:read`
-- `notification:read_all`
-- `notification:count`
-- `notification:delete`
-- `payment:status`
-
-**Stateless Design:**
-- No connection management (Pusher handles client connections)
-- No in-memory state (all stateless method calls)
-- Horizontally scalable (no sticky sessions needed)
+### 4.3 Stripe CLI Testing
+- Use `stripe listen --forward-to localhost:3000/payments/webhook` for local testing
+- Trigger test events: `stripe trigger checkout.session.completed`
 
 ---
 
-## Phase 6: Update Notifications Module
+## File Structure
 
-### 6.1 Update `src/notifications/notifications.module.ts`
-
-**Changes:**
-```typescript
-imports: [
-  // ... existing imports
-  TypeOrmModule.forFeature([Notification, NotificationPreferences]),
-  JwtModule.registerAsync({ ... }), // Keep for Pusher auth endpoint
-  AuthModule, // Keep for token validation
-],
-providers: [
-  NotificationsService,
-  NotificationsGateway,
-  PusherService, // New
-],
-controllers: [
-  NotificationsController,
-  NotificationsClientController,
-  PusherAuthController, // New
-],
-exports: [
-  NotificationsService,
-  NotificationsGateway,
-  PusherService, // Export for other modules
-],
 ```
-
-**Keep JWT Infrastructure:**
-- JWT is still required for Pusher private channel authorization
-- Do not remove JwtModule or AuthModule
-
-**Remove WebSocket-Specific Imports:**
-- No need for WebSocket adapter
-- No need for Socket.IO configuration
-
----
-
-## Phase 7: Update Notifications Service
-
-### 7.1 Update `src/notifications/notifications.service.ts`
-
-**Changes:**
-- Add `await` to all gateway method calls (they're now async)
-- Add error handling for Pusher failures (graceful degradation)
-
-**Example:**
-```typescript
-async create(dto: CreateNotificationDto): Promise<Notification> {
-  try {
-    const notification = this.notificationRepository.create({ ... });
-    const saved = await this.notificationRepository.save(notification);
-
-    // Emit real-time notification (async, with retry)
-    await this.notificationsGateway.emitToUser(dto.userId, saved);
-
-    return saved;
-  } catch (error: unknown) {
-    // If Pusher fails, notification is still saved to DB
-    // Frontend can poll REST API as fallback
-    if (error instanceof Error) {
-      // Log Pusher failure but don't fail the request
-      console.error('Failed to emit Pusher event:', error.message);
-    }
-    // Return saved notification regardless of Pusher status
-    return saved; // or re-throw if DB save failed
-  }
-}
-```
-
-**Graceful Degradation:**
-- If Pusher fails, notification is still persisted to database
-- REST API endpoints remain functional
-- Client can poll `/notifications` endpoint as fallback
-- No request failure due to Pusher outage
-
----
-
-## Phase 8: Database Connection Management (Serverless)
-
-### 8.1 Connection Pooling Guidance
-
-**Problem:** Serverless environments can exhaust database connections due to cold starts and concurrent invocations.
-
-**Solutions:**
-- Use connection pooling (already configured via Neon pooler in DATABASE_URL)
-- Current DATABASE_URL includes `-pooler` endpoint: `ep-bitter-salad-ag11e808-pooler.c-2.eu-central-1.aws.neon.tech`
-- Ensure TypeORM DataSource is reused across invocations (singleton pattern)
-- Avoid creating new connections per request
-- Set appropriate pool size limits (max 10-20 connections for serverless)
-
-**TypeORM Configuration:**
-```typescript
-// In database.config.ts
-{
-  poolSize: 10, // Limit connections for serverless
-  extra: {
-    max: 10,
-    min: 2,
-    idleTimeoutMillis: 30000,
-  }
-}
-```
-
-**DataSource Reuse Pattern:**
-```typescript
-// Singleton pattern for serverless
-let dataSource: DataSource | null = null;
-
-export async function getDataSource(): Promise<DataSource> {
-  if (!dataSource || !dataSource.isInitialized) {
-    dataSource = await initializeDataSource();
-  }
-  return dataSource;
-}
-```
-
-**Avoid Connection Leaks:**
-- Always use repository pattern (TypeORM manages connections)
-- Avoid manual connection creation
-- Use transactions carefully (commit/rollback promptly)
-- Monitor connection count in Neon dashboard
-
----
-
-## Phase 9: Clean Up Socket.IO References
-
-### 9.1 Audit Socket.IO Usage
-- Search entire codebase for `socket.io` imports
-- Verify no other modules depend on it
-- Check `src/main.ts` for WebSocket adapter setup
-
-### 9.2 Remove Socket.IO (if unused elsewhere)
-```bash
-pnpm remove socket.io @nestjs/platform-socket.io
-```
-
-### 9.3 Update `src/config/ws.config.ts`
-- Remove file (no longer needed)
-- Or add deprecation notice if referenced elsewhere
-
-### 9.4 Update `src/main.ts`
-- Remove Socket.IO adapter initialization
-- Remove any WebSocket-specific setup
-- Remove `SanadIoAdapter` import and usage
-
----
-
-## Phase 10: Frontend Migration Guide
-
-### 10.1 Client-Side Changes Required
-
-**Old (Socket.IO):**
-```javascript
-import io from 'socket.io-client';
-const socket = io('http://localhost:5000', {
-  auth: { token: jwtToken }
-});
-socket.on('notification:new', (payload) => { ... });
-```
-
-**New (Pusher):**
-```javascript
-import Pusher from 'pusher-js';
-
-const pusher = new Pusher('PUSHER_KEY', {
-  cluster: 'PUSHER_CLUSTER',
-  authEndpoint: '/pusher/auth',
-  auth: {
-    headers: {
-      Authorization: `Bearer ${jwtToken}`
-    }
-  },
-  forceTLS: true
-});
-
-// Subscribe to private channel
-const channel = pusher.subscribe(`private-user-${userId}`);
-
-// Bind events
-channel.bind('notification:new', (payload) => {
-  // Deduplicate using eventId
-  if (!seenEventIds.has(payload.eventId)) {
-    seenEventIds.add(payload.eventId);
-    // Process notification
-  }
-});
-
-// Cleanup on logout
-channel.unbind_all();
-pusher.unsubscribe(`private-user-${userId}`);
-```
-
-**Token Refresh Handling:**
-```javascript
-// Update auth headers when token refreshes
-pusher.config.auth.headers.Authorization = `Bearer ${newToken}`;
-```
-
-**Reconnection Handling:**
-```javascript
-pusher.connection.bind('state_change', (states) => {
-  if (states.current === 'connected') {
-    // Re-subscribe to channels
-    pusher.subscribe(`private-user-${userId}`);
-  }
-});
-```
-
-**Memory Leak Prevention:**
-```javascript
-// On component unmount / logout
-channel.unbind('notification:new');
-pusher.unsubscribe(`private-user-${userId}`);
-pusher.disconnect();
-```
-
-**Deduplication Strategy:**
-```javascript
-const seenEventIds = new Set();
-
-channel.bind('notification:new', (payload) => {
-  if (payload.eventId && !seenEventIds.has(payload.eventId)) {
-    seenEventIds.add(payload.eventId);
-    // Process notification
-    
-    // Clean up old event IDs (keep last 100)
-    if (seenEventIds.size > 100) {
-      const firstKey = seenEventIds.values().next().value;
-      seenEventIds.delete(firstKey);
-    }
-  }
-});
+src/
+├── cart/
+│   ├── schema/
+│   │   ├── cart.schema.ts
+│   │   └── cart-item.schema.ts
+│   ├── dto/
+│   │   ├── add-to-cart.dto.ts
+│   │   ├── update-cart-item.dto.ts
+│   │   └── cart-response.dto.ts
+│   ├── cart.repository.ts
+│   ├── cart.service.ts
+│   ├── cart.controller.ts
+│   └── cart.module.ts
+│
+├── modules/payments/
+│   ├── schema/
+│   │   └── payment.schema.ts (updated)
+│   ├── types/
+│   │   └── stripe.types.ts (updated)
+│   ├── dto/
+│   │   ├── create-payment-intent.dto.ts (existing)
+│   │   └── create-checkout-session.dto.ts (new)
+│   ├── payments.repository.ts (updated)
+│   ├── payments.service.ts (updated)
+│   ├── payments.controller.ts (updated)
+│   └── payments.module.ts (updated)
+│
+db/migrations/
+└── XXX-add-cart-and-webhook-tracking.ts
 ```
 
 ---
 
-## Phase 11: Monitoring & Observability
+## Key Design Decisions
 
-### 11.1 Structured Logging
-
-**All Pusher operations logged with JSON format:**
-```typescript
-// Success
-{
-  timestamp: '2026-05-20T10:30:00Z',
-  level: 'info',
-  service: 'pusher',
-  event: 'notification:new',
-  channel: 'private-user-abc123',
-  userId: 'abc123',
-  eventId: 'uuid-v4',
-  latency: 150,
-  status: 'success'
-}
-
-// Failure
-{
-  timestamp: '2026-05-20T10:30:00Z',
-  level: 'error',
-  service: 'pusher',
-  event: 'notification:new',
-  channel: 'private-user-abc123',
-  userId: 'abc123',
-  eventId: 'uuid-v4',
-  error: 'Pusher API timeout',
-  attempt: 3,
-  maxAttempts: 3,
-  status: 'failed'
-}
-
-// Auth failure
-{
-  timestamp: '2026-05-20T10:30:00Z',
-  level: 'warn',
-  service: 'pusher-auth',
-  channel: 'private-user-xyz789',
-  requestedUserId: 'xyz789',
-  authenticatedUserId: 'abc123',
-  reason: 'channel_ownership_mismatch',
-  status: 'auth_failed'
-}
-```
-
-### 11.2 Sentry Integration
-
-**Error Tracking:**
-```typescript
-import * as Sentry from '@sentry/node';
-
-// In PusherService catch blocks
-Sentry.captureException(error, {
-  tags: { service: 'pusher', event: 'notification:new' },
-  user: { id: userId },
-  extra: { channel, eventId, attempt }
-});
-```
-
-### 11.3 External Monitoring
-
-**Synthetic Monitoring:**
-- Use external uptime monitoring (e.g., Pingdom, UptimeRobot)
-- Monitor `/notifications` endpoint availability
-- Alert on increased error rates
-
-**Request-Level Metrics:**
-- Track Pusher trigger failures in logs
-- Monitor latency percentiles (p50, p95, p99)
-- Set up alerts for error rate spikes
-
-**No Internal Health Checks:**
-- Serverless instances are ephemeral
-- Traditional health checks not meaningful
-- Rely on external monitoring and log aggregation
-
----
-
-## Phase 12: Production Hardening
-
-### 12.1 Graceful Degradation
-- If Pusher is unavailable, notifications still saved to database
-- REST API endpoints remain functional
-- Client can poll `/notifications` endpoint as fallback
-- No request failure due to Pusher outage
-
-### 12.2 Simplified Reliability (No Circuit Breaker)
-- Remove in-memory circuit breaker (not serverless-compatible)
-- Rely on inline retries + logging + graceful degradation
-- If external state store needed later (Redis/Upstash), can add circuit breaker
-
-### 12.3 Rate Limit Awareness
-- Monitor Pusher plan limits (messages/sec, connections)
-- Log warnings when approaching limits
-- Pusher handles rate limiting on their side
-- No server-side rate limiting needed (managed by Pusher)
-
-### 12.4 Startup Validation
-- Validate all Pusher env vars on application startup
-- Test Pusher connection during bootstrap (lightweight)
-- Fail fast if configuration is invalid
-- Log warning if Pusher is in development mode
-
-**Validation Code:**
-```typescript
-// In app.module.ts or main.ts
-async function validatePusherConfig(configService: ConfigService) {
-  const requiredVars = ['PUSHER_APP_ID', 'PUSHER_KEY', 'PUSHER_SECRET', 'PUSHER_CLUSTER'];
-  const missing = requiredVars.filter(varName => !configService.get(varName));
-  
-  if (missing.length > 0) {
-    throw new Error(`Missing Pusher configuration: ${missing.join(', ')}`);
-  }
-}
-```
-
-### 12.5 Strong Typings
-```typescript
-export interface NotificationEventPayload {
-  eventId: string;
-  userId: string;
-  notificationId: string;
-  type: string;
-  title: string;
-  message: string;
-  data?: Record<string, unknown>;
-  timestamp: string;
-}
-
-export interface PaymentStatusPayload {
-  eventId: string;
-  status: 'succeeded' | 'failed' | 'refunded';
-  amount: number;
-  description: string;
-  timestamp: string;
-}
-
-export interface PusherTriggerResponse {
-  eventIds: string[];
-}
-```
-
----
-
-## Phase 13: Comprehensive Testing
-
-### 13.1 Unit Tests
-
-**PusherService:**
-- Test all emit methods
-- Test retry logic (mock Pusher failures)
-- Test exponential backoff
-- Test idempotency (eventId generation)
-- Test structured logging
-- Test graceful degradation on failure
-
-**PusherAuthController:**
-- Test successful channel authorization
-- Test unauthorized subscription (different userId)
-- Test invalid JWT token
-- Test missing Authorization header
-- Test logging of auth failures
-
-### 13.2 Integration Tests
-
-**Multi-User Isolation:**
-- User A cannot subscribe to User B's channel
-- Events sent to User A don't reach User B
-- Concurrent notifications to multiple users
-
-**Retry Behavior:**
-- Simulate Pusher API failure
-- Verify retry with backoff
-- Verify graceful degradation (notification still saved)
-- Verify logging of failures
-
-**Duplicate Event Tests:**
-- Send same event multiple times
-- Verify eventId uniqueness
-- Test frontend deduplication logic
-
-### 13.3 E2E Tests
-
-**Pusher Outage Simulation:**
-- Mock Pusher SDK to throw errors
-- Verify notifications still saved to DB
-- Verify REST API still functional
-- Verify recovery when Pusher comes back
-
-**Load Testing:**
-- Send 1000 notifications concurrently
-- Measure latency
-- Verify no events lost (or gracefully degraded)
-- Monitor database connection pool
-
-### 13.4 Security Tests
-
-**Authorization Tests:**
-- Attempt subscription with invalid token
-- Attempt subscription to another user's channel
-- Verify 403 responses
-- Verify audit logging
-
-**Rate Limit Tests:**
-- Send 100 auth requests in 1 second
-- Verify rate limiting kicks in
-- Verify legitimate requests still work
-
----
-
-## File Changes Summary
-
-### New Files
-- `src/config/pusher.config.ts` - Pusher configuration provider
-- `src/notifications/pusher.service.ts` - Pusher service with inline retry
-- `src/notifications/pusher.auth.controller.ts` - Private channel auth endpoint
-
-### Modified Files
-- `src/config/env.validation.ts` - Add Pusher env validation
-- `src/notifications/notifications.gateway.ts` - Replace Socket.IO with Pusher
-- `src/notifications/notifications.module.ts` - Add Pusher providers
-- `src/notifications/notifications.service.ts` - Add await to gateway calls + error handling
-- `.env.example` - Document Pusher variables
-- `package.json` - Add pusher, remove socket.io (if unused)
-- `src/main.ts` - Remove WebSocket adapter setup
-
-### Removed Files
-- `src/config/ws.config.ts` - No longer needed (Socket.IO removed)
-
-### Unchanged Files
-- `src/notifications/notifications.controller.ts` - REST API unchanged
-- `src/notifications/notifications.client.controller.ts` - REST API unchanged
-- All DTOs, enums, events, interfaces, schemas - No changes
-
----
-
-## Migration Strategy
-
-### Backward Compatibility
-- Event names remain identical
-- Channel naming: `private-user-{userId}` (secure private channels)
-- Client must migrate from Socket.IO to Pusher JS SDK
-- REST API endpoints unchanged
-- Database schema unchanged (no migration required)
-
-### Rollout Strategy
-1. Deploy backend with Pusher (Socket.IO removed)
-2. Test Pusher with debug console
-3. Update frontend to use Pusher
-4. Monitor for 24-48 hours
-5. Verify no Socket.IO dependencies remain
-6. Deploy final version
-
-### Rollback Plan
-- Keep Socket.IO dependencies in package.json until Pusher verified
-- Gateway can switch back by restoring Socket.IO imports if needed
-- Database notifications remain functional regardless
-- Frontend can fall back to polling if Pusher fails
-
----
-
-## Serverless Architecture Summary
-
-### Final Architecture Flow
-```
-Vercel Serverless Function (REST API)
-    → Save notification to database (TypeORM)
-    → Trigger Pusher event (inline, with retry)
-    → Log success/failure (structured logging)
-    → Return response to client
-
-Frontend (pusher-js)
-    → Subscribe to private-user-{userId} channel
-    → Receive realtime event
-    → Deduplicate using eventId
-    → If Pusher fails, poll REST API as fallback
-```
-
-### Key Design Principles
-- **Stateless**: No in-memory state, no persistent connections
-- **Serverless-compatible**: All logic in request lifecycle
-- **Simple**: No queues, no workers, no complex orchestration
-- **Reliable**: Database persistence + inline retries + polling fallback
-- **Secure**: Private channels + JWT auth + channel ownership validation
-- **Scalable**: Horizontally scalable across serverless invocations
-- **Observable**: Structured logging + Sentry + external monitoring
-
-### What We Avoided
-- ❌ BullMQ or queue systems (not serverless-compatible)
-- ❌ In-memory circuit breakers (ephemeral instances)
-- ❌ Background workers (no persistent processes)
-- ❌ WebSocket server (managed by Pusher)
-- ❌ Complex orchestration layers
-- ❌ Distributed worker systems
-
-### Future Enhancements (If Needed)
-- External queue: Upstash QStash, Inngest, Trigger.dev
-- Circuit breaker: Redis-backed state store
-- Advanced metrics: Prometheus + Grafana
-- Distributed tracing: OpenTelemetry
+1. **Checkout Sessions over PaymentIntents**: Stripe's recommended approach for on-session payments, handles taxes, dynamic payment methods automatically
+2. **Server-side price validation**: NEVER trust client-sent amounts; always fetch from Product entity
+3. **Webhook idempotency**: Track processed event IDs to prevent duplicate processing
+4. **Cart as ephemeral**: No soft deletes; cart cleared after successful checkout
+5. **Stock validation at cart time**: Prevent adding out-of-stock items, but re-validate at checkout
+6. **Restricted API Keys**: Use RAKs with minimum permissions per Stripe security best practices
+7. **No `payment_method_types`**: Omit to enable dynamic payment methods (Stripe best practice)
+8. **Raw body handling**: Ensure NestJS configured with `rawBody: true` for webhook signature verification
 
 ---
 
 ## Risks & Mitigations
 
-| Risk | Mitigation |
-|------|-----------|
-| Pusher API outage | Inline retries + DB persistence + polling fallback |
-| Duplicate events | EventId + frontend deduplication |
-| Security breach | Private channels + JWT auth + channel ownership verification |
-| Rate limits | Monitoring + Pusher handles rate limiting |
-| Client migration issues | Detailed migration guide + backward compatibility period |
-| Message loss | Inline retries + DB persistence (graceful degradation) |
-| Latency spikes | Structured logging + Sentry + external monitoring |
-| DB connection exhaustion | Connection pooling (Neon pooler) + DataSource reuse |
-| Cold start latency | Acceptable for notifications (not critical path) |
+1. **Webhook signature verification failure**: Ensure raw body is passed correctly, not JSON-parsed
+2. **Duplicate webhook events**: Use event ID tracking for idempotency
+3. **Cart-product price drift**: Store price snapshot at checkout time
+4. **Stock changes between cart and checkout**: Re-validate stock before creating checkout session
+5. **Stripe API version changes**: Pin API version in Stripe SDK initialization
 
 ---
 
-## Package Manager
-- Use `pnpm` for all package operations:
-  ```bash
-  pnpm add pusher
-  pnpm remove socket.io @nestjs/platform-socket.io
-  ```
+## Implementation Order
 
----
-
-## Next Steps After Approval
-1. Audit Socket.IO usage across codebase
-2. Install Pusher dependencies with pnpm
-3. Implement configuration and service
-4. Create auth endpoint
-5. Refactor gateway
-6. Update notifications service (add await + error handling)
-7. Clean up Socket.IO references
-8. Test comprehensively
-9. Update documentation & frontend migration guide
-10. Deploy and monitor
+1. Cart schema, DTOs, repository
+2. Cart service, controller, module
+3. Payments schema updates, new DTOs
+4. Payments service (checkout session creation)
+5. Payments webhook handler (all events)
+6. Payments controller updates
+7. Database migration
+8. Module registration in app.module.ts
+9. Unit tests
+10. E2E tests
+11. Stripe CLI integration testing
+12. Documentation updates
