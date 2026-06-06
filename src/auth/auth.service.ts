@@ -66,6 +66,7 @@ export class AuthService {
     const payload = { id: user.id, email: user.email, role: user.role };
     const token = this.jwtService.sign(payload);
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password, ...userWithoutPassword } = user;
 
     return { user: userWithoutPassword, access_token: token };

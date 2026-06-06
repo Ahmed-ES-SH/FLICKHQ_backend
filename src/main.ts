@@ -4,7 +4,6 @@ import { AppModule } from './app.module';
 import helmet from 'helmet';
 import { ValidationPipe } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
-import * as express from 'express';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { RequestLoggerMiddleware } from './common/middleware/request-logger.middleware';
@@ -66,8 +65,18 @@ async function bootstrap() {
     new RequestLoggerMiddleware().use.bind(new RequestLoggerMiddleware()),
   );
 
-  // Stripe webhook raw body middleware — must be before JSON parsing
-  app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
+  // Stripe webhook raw body
+  // -----------------------
+  // `rawBody: true` above causes Nest's Express adapter to attach the
+  // unparsed request body to `req.rawBody` (Buffer) on every request, in
+  // addition to the JSON-parsed `req.body`. The BillingModule's
+  // `StripeWebhookController` reads `req.rawBody` and verifies the
+  // Stripe-Signature against it (signature verification must operate
+  // on the exact bytes Stripe sent — JSON re-serialization breaks it).
+  // No additional per-route middleware is needed: the global
+  // `ValidationPipe`, `helmet`, `cookieParser`, and the request logger
+  // do not consume the body. Routes that do not need the raw body can
+  // simply ignore `req.rawBody` and use `req.body` as usual.
 
   // Swagger documentation
   const config = new DocumentBuilder()
@@ -76,7 +85,6 @@ async function bootstrap() {
     .setVersion('1.0')
     .addTag('CYPHER')
     .addTag('auth')
-    .addTag('payments')
     .addBearerAuth()
     .build();
   const documentFactory = () => SwaggerModule.createDocument(app, config);

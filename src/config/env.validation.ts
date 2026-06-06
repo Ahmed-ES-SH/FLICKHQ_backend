@@ -98,13 +98,22 @@ export const validationSchema = Joi.object({
   // ===================
 
   // ===================
-  // STRIPE (Optional)
+  // STRIPE (Billing module)
   // ===================
+
+  /**
+   * Stripe restricted API key (preferred for production).
+   * Get from: https://dashboard.stripe.com/apikeys
+   * Format: rk_test_... or rk_live_...
+   * If both this and STRIPE_SECRET_KEY are set, the restricted key wins.
+   */
+  STRIPE_RESTRICTED_KEY: Joi.string().optional(),
 
   /**
    * Stripe secret key for payment processing
    * Get from: https://dashboard.stripe.com/apikeys
    * Use test key (sk_test_...) for development
+   * Only used if STRIPE_RESTRICTED_KEY is not set.
    */
   STRIPE_SECRET_KEY: Joi.string().optional(),
 
@@ -112,8 +121,46 @@ export const validationSchema = Joi.object({
    * Stripe webhook signing secret
    * Get from: https://dashboard.stripe.com/webhooks
    * Format: whsec_...
+   * Required when the BillingModule is enabled (non-test environments).
    */
   STRIPE_WEBHOOK_SECRET: Joi.string().optional(),
+
+  /**
+   * Stripe API version pinned for this backend.
+   * The SDK default is 2026-04-22.dahlia; this project targets 2026-05-27.dahlia.
+   */
+  STRIPE_API_VERSION: Joi.string().default('2026-05-27.dahlia'),
+
+  /**
+   * Default currency used for Checkout, invoices, and prices that
+   * have no explicit currency. ISO-4217 lowercase 3-letter code.
+   */
+  BILLING_DEFAULT_CURRENCY: Joi.string().lowercase().length(3).default('usd'),
+
+  /**
+   * Toggle to disable the billing module entirely. When false, the
+   * BillingModule is not registered and Stripe env vars are not
+   * required. Defaults to true.
+   */
+  BILLING_ENABLED: Joi.boolean().default(true),
+
+  /**
+   * URL the user is sent to after a successful Stripe Checkout
+   * session. Required when the BillingModule is enabled.
+   */
+  STRIPE_SUCCESS_URL: Joi.string().uri().optional(),
+
+  /**
+   * URL the user is sent to after canceling Stripe Checkout.
+   * Required when the BillingModule is enabled.
+   */
+  STRIPE_CANCEL_URL: Joi.string().uri().optional(),
+
+  /**
+   * URL Stripe Customer Portal redirects the user to when they
+   * press "Back to app". Required when the BillingModule is enabled.
+   */
+  STRIPE_PORTAL_RETURN_URL: Joi.string().uri().optional(),
 
   // ===================
   // GOOGLE OAuth (Optional)
@@ -183,4 +230,52 @@ export const validationSchema = Joi.object({
   PUSHER_CLUSTER: Joi.string()
     .valid('us2', 'eu', 'ap1', 'ap2', 'ap3', 'mt1')
     .required(),
+}).custom((value, helpers) => {
+  // Cross-field validation for the BillingModule. When BILLING_ENABLED
+  // is true we require a Stripe key, the webhook secret (non-test),
+  // and the success/cancel/portal URLs. When BILLING_ENABLED is false
+  // we let the module simply not be registered at runtime.
+  const enabled = value.BILLING_ENABLED !== false;
+  if (!enabled) {
+    return value;
+  }
+
+  const nodeEnv = (value.NODE_ENV as string | undefined) ?? 'development';
+  const isTest = nodeEnv === 'test';
+  const errors: string[] = [];
+
+  if (!value.STRIPE_RESTRICTED_KEY && !value.STRIPE_SECRET_KEY) {
+    errors.push(
+      'STRIPE_RESTRICTED_KEY (preferred) or STRIPE_SECRET_KEY is required when BILLING_ENABLED is true.',
+    );
+  }
+
+  if (!value.STRIPE_WEBHOOK_SECRET && !isTest) {
+    errors.push(
+      'STRIPE_WEBHOOK_SECRET is required when BILLING_ENABLED is true (test environments may omit it).',
+    );
+  }
+
+  if (
+    value.STRIPE_WEBHOOK_SECRET &&
+    !String(value.STRIPE_WEBHOOK_SECRET).startsWith('whsec_')
+  ) {
+    errors.push('STRIPE_WEBHOOK_SECRET must start with "whsec_".');
+  }
+
+  for (const key of [
+    'STRIPE_SUCCESS_URL',
+    'STRIPE_CANCEL_URL',
+    'STRIPE_PORTAL_RETURN_URL',
+  ] as const) {
+    if (!value[key]) {
+      errors.push(`${key} is required when BILLING_ENABLED is true.`);
+    }
+  }
+
+  if (errors.length > 0) {
+    return helpers.error('any.invalid', { message: errors.join(' ') });
+  }
+
+  return value;
 });

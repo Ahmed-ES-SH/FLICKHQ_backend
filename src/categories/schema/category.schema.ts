@@ -9,7 +9,6 @@ import {
 } from 'typeorm';
 import { Exclude } from 'class-transformer';
 import { Article } from '../../blog/schema/article.schema';
-import { Product } from '../../products/schema/product.schema';
 
 @Entity('categories')
 @Index(['slug'], { unique: true })
@@ -46,8 +45,4 @@ export class Category {
   @OneToMany(() => Article, (article) => article.category)
   @Exclude()
   articles: Article[];
-
-  @OneToMany(() => Product, (product) => product.category)
-  @Exclude()
-  products: Product[];
 }

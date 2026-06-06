@@ -16,7 +16,6 @@ import { UpdateArticleDto } from './dto/update-article.dto';
 import { FindAllArticlesQueryDto } from './dto/find-all-articles-query.dto';
 import { Roles } from '../auth/decorators/Roles.decorator';
 import { UserRoleEnum } from '../auth/types/UserRoleEnum';
-import { Article } from './schema/article.schema';
 
 @Controller('admin/blog')
 @Roles(UserRoleEnum.ADMIN)

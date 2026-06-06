@@ -1,12 +1,10 @@
 import {
   Controller,
   Get,
-  Post,
   Patch,
   Delete,
   Param,
   Query,
-  UseGuards,
   Request,
   HttpCode,
   HttpStatus,
@@ -18,7 +16,6 @@ import {
   ApiResponse,
   ApiBearerAuth,
 } from '@nestjs/swagger';
-import { AuthGuard } from '@nestjs/passport';
 import { NotificationsService } from './notifications.service';
 import { PaginationQueryDto } from './dto/paginate-notifications.dto';
 import { CursorPaginationDto } from './dto/cursor-pagination.dto';

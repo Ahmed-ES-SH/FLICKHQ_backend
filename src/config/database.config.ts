@@ -17,18 +17,18 @@ import { BlackList } from '../auth/schema/blacklist-tokens.schema';
 import { ContactMessage } from '../contact/schema/contact-message.schema';
 import { Article } from '../blog/schema/article.schema';
 import { Category } from '../categories/schema/category.schema';
-import { Product } from '../products/schema/product.schema';
 import { Notification } from '../notifications/schema/notification.schema';
 import { NotificationPreferences } from '../notifications/schema/notification-preferences.schema';
-import { Payment } from '../payments/schema/payment.schema';
-import { Order } from '../orders/schema/order.schema';
-import { OrderItem } from '../orders/schema/order-item.schema';
-import { Refund } from '../payments/schema/refund.schema';
-import { Cart } from '../cart/schema/cart.schema';
-import { CartItem } from '../cart/schema/cart-item.schema';
-import { WebhookEvent } from '../payments/schema/webhook-event.schema';
-import { OutboxEvent } from '../payments/schema/outbox-event.schema';
-import { CheckoutSessionState } from '../payments/schema/checkout-session-state.schema';
+import { BillingCustomer } from '../billing/entities/billing-customer.entity';
+import { BillingPlan } from '../billing/entities/billing-plan.entity';
+import { BillingPrice } from '../billing/entities/billing-price.entity';
+import { BillingSubscription } from '../billing/entities/billing-subscription.entity';
+import { BillingPayment } from '../billing/entities/billing-payment.entity';
+import { BillingInvoice } from '../billing/entities/billing-invoice.entity';
+import { BillingTransaction } from '../billing/entities/billing-transaction.entity';
+import { BillingWebhookEvent } from '../billing/entities/billing-webhook-event.entity';
+import { BillingIdempotencyKey } from '../billing/entities/billing-idempotency-key.entity';
+import { BillingEntitlement } from '../billing/entities/billing-entitlement.entity';
 
 // Load environment variables from .env file
 config({ path: '.env' });
@@ -64,18 +64,18 @@ export const databaseConfig: DataSourceOptions = {
     ContactMessage,
     Article,
     Category,
-    Product,
     Notification,
     NotificationPreferences,
-    Payment,
-    Order,
-    OrderItem,
-    Refund,
-    Cart,
-    CartItem,
-    WebhookEvent,
-    OutboxEvent,
-    CheckoutSessionState,
+    BillingCustomer,
+    BillingPlan,
+    BillingPrice,
+    BillingSubscription,
+    BillingPayment,
+    BillingInvoice,
+    BillingTransaction,
+    BillingWebhookEvent,
+    BillingIdempotencyKey,
+    BillingEntitlement,
   ],
 
   // ⚠️ IMPORTANT: Always false in production!

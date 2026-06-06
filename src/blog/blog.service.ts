@@ -9,7 +9,6 @@ import { Repository } from 'typeorm';
 import { Article } from './schema/article.schema';
 import { CreateArticleDto } from './dto/create-article.dto';
 import { UpdateArticleDto } from './dto/update-article.dto';
-import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { FindAllArticlesQueryDto } from './dto/find-all-articles-query.dto';
 import { FindPublishedArticlesQueryDto } from './dto/find-published-articles-query.dto';
 import { generateUniqueSlug } from '../common/utils/slug.util';

@@ -4,7 +4,6 @@ import { Repository, QueryFailedError } from 'typeorm';
 import { NotFoundException, ConflictException } from '@nestjs/common';
 import { CategoriesService } from './categories.service';
 import { Category } from './schema/category.schema';
-import { Product } from '../products/schema/product.schema';
 import { Article } from '../blog/schema/article.schema';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
@@ -19,7 +18,6 @@ describe('CategoriesService', () => {
   let service: CategoriesService;
 
   let categoryRepo: jest.Mocked<Repository<Category>>;
-  let productRepo: jest.Mocked<Repository<Product>>;
   let articleRepo: jest.Mocked<Repository<Article>>;
 
   const mockCategory: Category = {
@@ -33,7 +31,6 @@ describe('CategoriesService', () => {
     createdAt: new Date('2024-01-01'),
     updatedAt: new Date('2024-01-01'),
     articles: [],
-    products: [],
   };
 
   const mockQueryBuilder = {
@@ -66,12 +63,6 @@ describe('CategoriesService', () => {
           },
         },
         {
-          provide: getRepositoryToken(Product),
-          useValue: {
-            count: jest.fn().mockResolvedValue(0),
-          },
-        },
-        {
           provide: getRepositoryToken(Article),
           useValue: {
             count: jest.fn().mockResolvedValue(0),
@@ -82,7 +73,6 @@ describe('CategoriesService', () => {
 
     service = module.get<CategoriesService>(CategoriesService);
     categoryRepo = module.get(getRepositoryToken(Category));
-    productRepo = module.get(getRepositoryToken(Product));
     articleRepo = module.get(getRepositoryToken(Article));
 
     jest.clearAllMocks();
@@ -299,9 +289,6 @@ describe('CategoriesService', () => {
       expect(articleRepo.count).toHaveBeenCalledWith({
         where: { category: { id: 'cat-001' } },
       });
-      expect(productRepo.count).toHaveBeenCalledWith({
-        where: { category: { id: 'cat-001' } },
-      });
       expect(categoryRepo.remove).toHaveBeenCalledWith(mockCategory);
       expect(result).toEqual({ message: 'Category deleted successfully' });
     });
@@ -321,7 +308,6 @@ describe('CategoriesService', () => {
     it('should return category with counts', async () => {
       categoryRepo.findOne.mockResolvedValueOnce(mockCategory);
       articleRepo.count.mockResolvedValue(5);
-      productRepo.count.mockResolvedValue(10);
 
       const result = await service.getByIdWithCounts('cat-001');
 
@@ -329,22 +315,17 @@ describe('CategoriesService', () => {
         expect.objectContaining({
           ...mockCategory,
           articlesCount: 5,
-          productsCount: 10,
         }),
       );
     });
 
-    it('should count articles and products in parallel using entity relations', async () => {
+    it('should count articles using entity relations', async () => {
       categoryRepo.findOne.mockResolvedValueOnce(mockCategory);
       articleRepo.count.mockResolvedValue(3);
-      productRepo.count.mockResolvedValue(7);
 
       await service.getByIdWithCounts('cat-001');
 
       expect(articleRepo.count).toHaveBeenCalledWith({
-        where: { category: { id: 'cat-001' } },
-      });
-      expect(productRepo.count).toHaveBeenCalledWith({
         where: { category: { id: 'cat-001' } },
       });
     });

@@ -7,7 +7,6 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, QueryFailedError, In } from 'typeorm';
 import { Category } from './schema/category.schema';
-import { Product } from '../products/schema/product.schema';
 import { Article } from '../blog/schema/article.schema';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
@@ -20,7 +19,6 @@ import { ReorderCategoriesDto } from './dto/reorder-categories.dto';
 
 export interface CategoryWithCounts extends Category {
   articlesCount: number;
-  productsCount: number;
 }
 
 /** Postgres unique violation error code */
@@ -33,8 +31,6 @@ export class CategoriesService {
   constructor(
     @InjectRepository(Category)
     private readonly categoryRepository: Repository<Category>,
-    @InjectRepository(Product)
-    private readonly productRepository: Repository<Product>,
     @InjectRepository(Article)
     private readonly articleRepository: Repository<Article>,
   ) {}
@@ -193,24 +189,21 @@ export class CategoriesService {
   /**
    * Delete a category with validation
    *
-   * The Article→Category and Product→Category relations both have
-   * onDelete: 'SET NULL', so the DB automatically nullifies the FK
-   * when the category is removed. We count related entities beforehand
-   * only for the warning log.
+   * The Article→Category relation has onDelete: 'SET NULL', so the DB
+   * automatically nullifies the FK when the category is removed. We count
+   * related entities beforehand only for the warning log.
    */
   async delete(id: string): Promise<{ message: string }> {
     const category = await this.getById(id);
 
-    // Count related entities in parallel using entity-based queries
-    const [articlesCount, productsCount] = await Promise.all([
-      this.articleRepository.count({ where: { category: { id } } }),
-      this.productRepository.count({ where: { category: { id } } }),
-    ]);
+    const articlesCount = await this.articleRepository.count({
+      where: { category: { id } },
+    });
 
-    if (articlesCount > 0 || productsCount > 0) {
+    if (articlesCount > 0) {
       this.logger.warn(
         `Category "${category.name}" (${id}) is referenced by ` +
-          `${articlesCount} article(s) and ${productsCount} product(s). ` +
+          `${articlesCount} article(s). ` +
           `Their categoryId will be set to NULL on deletion.`,
       );
     }
@@ -227,16 +220,13 @@ export class CategoriesService {
   async getByIdWithCounts(id: string): Promise<CategoryWithCounts> {
     const category = await this.getById(id);
 
-    // Count related entities in parallel using entity-based queries
-    const [articlesCount, productsCount] = await Promise.all([
-      this.articleRepository.count({ where: { category: { id } } }),
-      this.productRepository.count({ where: { category: { id } } }),
-    ]);
+    const articlesCount = await this.articleRepository.count({
+      where: { category: { id } },
+    });
 
     return {
       ...category,
       articlesCount,
-      productsCount,
     };
   }
 
