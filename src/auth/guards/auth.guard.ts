@@ -7,11 +7,11 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 
-import { Request } from 'express';
 import { AuthService } from '../auth.service';
 import { Reflector } from '@nestjs/core';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { RequestWithUser } from '../types/request.interface';
+import { UserService } from '../../user/user.service';
 import { UserRoleEnum } from '../types/UserRoleEnum';
 
 @Injectable()
@@ -23,9 +23,10 @@ export class AuthGuard implements CanActivate {
     private readonly jwtService: JwtService,
     private reflector: Reflector,
     private readonly configService: ConfigService,
+    private readonly userService: UserService,
   ) {
     this.cookieName =
-      this.configService.get<string>('AUTH_TOKEN') ?? 'sanad_auth_token';
+      this.configService.get<string>('AUTH_TOKEN') ?? 'flick_auth_token';
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -54,7 +55,12 @@ export class AuthGuard implements CanActivate {
         throw new UnauthorizedException('This token has been revoked');
       }
 
-      request.user = decodedToken;
+      const user = await this.userService.findById(decodedToken.id);
+      if (!user) {
+        throw new UnauthorizedException('User not found');
+      }
+
+      request.user = user;
 
       return true;
     } catch (error) {

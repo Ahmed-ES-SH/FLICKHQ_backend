@@ -31,7 +31,7 @@ type MockEntityManager = {
 /* eslint-disable @typescript-eslint/unbound-method */
 describe('BillingCustomerService', () => {
   let service: BillingCustomerService;
-  let customerRepo: Repository<BillingCustomer>;
+  let customerRepo: jest.Mocked<Repository<BillingCustomer>>;
   let stripeService: jest.Mocked<BillingStripeService>;
   let eventEmitter: jest.Mocked<EventEmitter2>;
   let stripeCustomers: StripeClientMock;
@@ -78,7 +78,7 @@ describe('BillingCustomerService', () => {
       manager: {
         transaction: jest.fn(),
       },
-    } as unknown as Repository<BillingCustomer>;
+    } as unknown as jest.Mocked<Repository<BillingCustomer>>;
     managerMock = customerRepo.manager as unknown as ManagerMock;
     mockEntityManager = buildMockEntityManager();
     stripeCustomers = {

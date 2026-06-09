@@ -19,6 +19,7 @@
 
 import {
   IsBoolean,
+  IsIn,
   IsInt,
   IsNotEmpty,
   IsOptional,
@@ -129,13 +130,24 @@ export class BillingSubscriptionCheckoutRequestDto {
   @IsBoolean()
   @IsOptional()
   allowPromotionCodes?: boolean = true;
+
+  @ApiPropertyOptional({
+    description:
+      'Checkout UI mode. "hosted_page" (default) redirects to checkout.stripe.com. "embedded_page" renders the Stripe payment form inline via an iframe.',
+    enum: ['hosted_page', 'embedded_page'],
+    default: 'hosted_page',
+  })
+  @IsString()
+  @IsOptional()
+  @IsIn(['hosted_page', 'embedded_page'])
+  uiMode?: 'hosted_page' | 'embedded_page' = 'hosted_page';
 }
 
 /**
- * Response returned by both Checkout endpoints. The `url` is the
- * short-lived Stripe Checkout URL the client should redirect to
- * immediately; `sessionId` is opaque and is the value the webhook
- * handler will use to look the session up later.
+ * Response returned by both Checkout endpoints.
+ *
+ * - Hosted mode: `sessionId` + `url` (redirect to checkout.stripe.com).
+ * - Embedded mode: `sessionId` + `clientSecret` (render Stripe form inline).
  */
 export class BillingCheckoutSessionResponseDto {
   @ApiProperty({
@@ -146,14 +158,23 @@ export class BillingCheckoutSessionResponseDto {
   @IsNotEmpty()
   sessionId: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     description:
-      'Stripe-hosted Checkout URL. Short-lived; redirect immediately.',
+      'Stripe-hosted Checkout URL. Present in hosted mode. Short-lived; redirect immediately.',
     example: 'https://checkout.stripe.com/c/pay/cs_test_a1b2c3',
   })
   @IsString()
-  @IsNotEmpty()
-  url: string;
+  @IsOptional()
+  url?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Embedded Checkout client secret. Present in embedded mode. Pass to the Stripe Embedded Checkout component on the frontend.',
+    example: 'cs_test_a1b2c3_secret_xxx',
+  })
+  @IsString()
+  @IsOptional()
+  clientSecret?: string;
 }
 
 /**

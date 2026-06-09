@@ -978,10 +978,15 @@ describe('BillingWebhookService', () => {
       });
       const result = await service.replayEvent('local-replay-2');
       expect(result).not.toBeNull();
-      expect(result!.kind).toBe('failed');
-      expect(result!.errorMessage).toContain(
-        'Stored payload is missing required fields',
-      );
+      expect(result).not.toBeNull();
+      const r = result!;
+      if (r.kind === 'failed') {
+        expect(r.errorMessage).toContain(
+          'Stored payload is missing required fields',
+        );
+      } else {
+        throw new Error('Expected failed result');
+      }
     });
 
     it('returns failed when the handler throws during replay', async () => {

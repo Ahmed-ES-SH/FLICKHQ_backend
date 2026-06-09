@@ -14,7 +14,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     private readonly usersService: UserService,
   ) {
     const cookieName =
-      configService.get<string>('AUTH_TOKEN') ?? 'sanad_auth_token';
+      configService.get<string>('AUTH_TOKEN') ?? 'flick_auth_token';
 
     super({
       jwtFromRequest: (req: RequestWithUser) =>

@@ -314,7 +314,7 @@ describe('subscriptionIdOf', () => {
   });
 
   it('extracts the id when given an object', () => {
-    expect(subscriptionIdOf({ id: 'sub_obj_1' })).toBe('sub_obj_1');
+    expect(subscriptionIdOf({ id: 'sub_obj_1', status: 'active' })).toBe('sub_obj_1');
   });
 
   it('returns null for null / undefined', () => {

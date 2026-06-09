@@ -35,6 +35,7 @@ Repository Layout (high level)
   - `config/` - runtime configs: cache, database, env validation, mail, stripe, throttler, ws
   - `mail/` - mail service + templates
   - `modules/` - grouped business modules: jobs, lists, movies, payments
+    - `lists/` - User Lists system: `TmdbService` (media metadata fetch), `ListsService` (CRUD for user lists + items), `ListsController` (7 REST endpoints). Entities: `UserList`, `UserListItem`. System lists (Favorites/Watchlist/Watched) auto-created on signup via `ensureSystemLists()`.
   - `notifications/` - gateway, controllers, client endpoints
   - `helpers/` - small helpers (e.g., pagination)
 - `db/migrations/` - TypeORM migrations

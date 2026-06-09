@@ -93,9 +93,22 @@ export const validationSchema = Joi.object({
    */
   JWT_EXPIRES_IN: Joi.string().default('7d'),
 
+  /**
+   * Auth cookie name used for HttpOnly JWT transport.
+   * This MUST match the cookie name expected by the frontend.
+   * Example: sanad_auth_token
+   */
+  AUTH_TOKEN: Joi.string().required(),
+
   // ===================
-  // TMDB API
+  // TMDB API (Required for user lists)
   // ===================
+
+  TMDB_API_KEY: Joi.string().required(),
+
+  TMDB_BASE_URL: Joi.string().uri().default('https://api.themoviedb.org/3'),
+
+  TMDB_IMAGE_BASE_URL: Joi.string().uri().default('https://image.tmdb.org/t/p'),
 
   // ===================
   // STRIPE (Billing module)

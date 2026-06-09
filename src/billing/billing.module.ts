@@ -41,6 +41,7 @@ import {
   isWellFormedWebhookSecret,
 } from '../config/stripe.config';
 import { UserModule } from '../user/user.module';
+import { AuthModule } from '../auth/auth.module';
 
 import { BillingStripeService } from './services/billing-stripe.service';
 import { BillingCustomerService } from './services/billing-customer.service';
@@ -85,6 +86,7 @@ import { FeatureAccessGuard } from './guards/feature-access.guard';
       BillingEntitlement,
     ]),
     UserModule,
+    AuthModule,
   ],
   providers: [
     StripeProvider,

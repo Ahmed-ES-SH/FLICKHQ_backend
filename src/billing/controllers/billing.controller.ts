@@ -224,6 +224,7 @@ export class BillingController {
       clientReferenceId: dto.clientReferenceId ?? null,
       trialDays: dto.trialDays ?? null,
       allowPromotionCodes: dto.allowPromotionCodes ?? true,
+      uiMode: dto.uiMode,
       idempotencyKey,
     });
     return result;

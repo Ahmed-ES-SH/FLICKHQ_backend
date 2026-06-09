@@ -10,6 +10,7 @@ The **Billing** module wraps Stripe and exposes it through a tightly-controlled 
 
 > [!IMPORTANT]
 > **Key frontend rules**
+>
 > 1. The frontend **never** sends prices, amounts, currencies, or Stripe ids. It only sends the **local** `BillingPrice` UUID from the public plans endpoint and the idempotency key.
 > 2. Every Checkout and Portal endpoint **requires** an `Idempotency-Key` header. Generate a new key per logical user action (button click), and **reuse the same key on retries** within a few minutes.
 > 3. Checkout responses contain a short-lived `url` — redirect the user there immediately, do not store it.
@@ -20,112 +21,119 @@ The **Billing** module wraps Stripe and exposes it through a tightly-controlled 
 
 ## 1. Module Overview
 
-| Concern               | Detail                                                                              |
-| --------------------- | ----------------------------------------------------------------------------------- |
-| Base path (public)    | `/api/billing/plans/public`                                                         |
-| Base path (user)      | `/api/billing/*` (requires JWT)                                                     |
-| Base path (admin)     | `/api/billing/admin/*` (requires JWT + role `ADMIN`)                                |
-| Webhook path          | `/api/billing/webhooks/stripe` (called by Stripe, not the browser)                   |
-| Auth (user)           | JWT Bearer (global `AuthGuard`); cookie `sanad_auth_token` is honored on web builds |
-| Auth (admin)          | JWT Bearer + `Roles(UserRoleEnum.ADMIN)` + `RolesGuard`                             |
-| Rate limit            | Global `@nestjs/throttler`; webhook is `@SkipThrottle()`                            |
-| Persistence           | TypeORM tables: `billing_customers`, `billing_plans`, `billing_prices`, `billing_subscriptions`, `billing_payments`, `billing_invoices`, `billing_transactions`, `billing_webhook_events`, `billing_idempotency_keys`, `billing_entitlements` |
-| Idempotency TTL       | 24h (mirrors Stripe's window) — `DEFAULT_IDEMPOTENCY_TTL_MS`                        |
+| Concern            | Detail                                                                                                                                                                                                                                        |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Base path (public) | `/api/billing/plans/public`                                                                                                                                                                                                                   |
+| Base path (user)   | `/api/billing/*` (requires JWT)                                                                                                                                                                                                               |
+| Base path (admin)  | `/api/billing/admin/*` (requires JWT + role `ADMIN`)                                                                                                                                                                                          |
+| Webhook path       | `/api/billing/webhooks/stripe` (called by Stripe, not the browser)                                                                                                                                                                            |
+| Auth (user)        | JWT Bearer (global `AuthGuard`); cookie `flick_auth_token` is honored on web builds                                                                                                                                                           |
+| Auth (admin)       | JWT Bearer + `Roles(UserRoleEnum.ADMIN)` + `RolesGuard`                                                                                                                                                                                       |
+| Rate limit         | Global `@nestjs/throttler`; webhook is `@SkipThrottle()`                                                                                                                                                                                      |
+| Persistence        | TypeORM tables: `billing_customers`, `billing_plans`, `billing_prices`, `billing_subscriptions`, `billing_payments`, `billing_invoices`, `billing_transactions`, `billing_webhook_events`, `billing_idempotency_keys`, `billing_entitlements` |
+| Idempotency TTL    | 24h (mirrors Stripe's window) — `DEFAULT_IDEMPOTENCY_TTL_MS`                                                                                                                                                                                  |
 
 ### 1.1 Authorization Matrix
 
-| Endpoint                                       | Public | User  | Admin | Stripe |
-| ---------------------------------------------- | :----: | :---: | :---: | :----: |
-| `GET  /api/billing/plans/public`               |   ✅   |       |       |        |
-| `GET  /api/billing/customer`                   |        |  ✅   |       |        |
-| `POST /api/billing/customer/sync`              |        |  ✅   |       |        |
-| `POST /api/billing/portal/session`             |        |  ✅   |       |        |
-| `POST /api/billing/checkout/one-time`          |        |  ✅   |       |        |
-| `POST /api/billing/checkout/subscription`      |        |  ✅   |       |        |
-| `GET  /api/billing/entitlements`               |        |  ✅   |       |        |
-| `POST /api/billing/admin/plans`                |        |       |  ✅   |        |
-| `GET  /api/billing/admin/plans`                |        |       |  ✅   |        |
-| `PATCH /api/billing/admin/plans/:id`           |        |       |  ✅   |        |
-| `POST /api/billing/admin/plans/:id/archive`    |        |       |  ✅   |        |
-| `POST /api/billing/admin/plans/:id/prices`     |        |       |  ✅   |        |
-| `GET  /api/billing/admin/overview`             |        |       |  ✅   |        |
-| `GET  /api/billing/admin/webhooks/failed`      |        |       |  ✅   |        |
-| `POST /api/billing/admin/webhooks/:id/replay`  |        |       |  ✅   |        |
-| `POST /api/billing/admin/payments/:id/refund`  |        |       |  ✅   |        |
-| `POST /api/billing/webhooks/stripe`            |        |       |       |  ✅    |
+| Endpoint                                      | Public | User | Admin | Stripe |
+| --------------------------------------------- | :----: | :--: | :---: | :----: |
+| `GET  /api/billing/plans/public`              |   ✅   |      |       |        |
+| `GET  /api/billing/customer`                  |        |  ✅  |       |        |
+| `POST /api/billing/customer/sync`             |        |  ✅  |       |        |
+| `POST /api/billing/portal/session`            |        |  ✅  |       |        |
+| `POST /api/billing/checkout/one-time`         |        |  ✅  |       |        |
+| `POST /api/billing/checkout/subscription`     |        |  ✅  |       |        |
+| `GET  /api/billing/entitlements`              |        |  ✅  |       |        |
+| `POST /api/billing/admin/plans`               |        |      |  ✅   |        |
+| `GET  /api/billing/admin/plans`               |        |      |  ✅   |        |
+| `PATCH /api/billing/admin/plans/:id`          |        |      |  ✅   |        |
+| `POST /api/billing/admin/plans/:id/archive`   |        |      |  ✅   |        |
+| `POST /api/billing/admin/plans/:id/prices`    |        |      |  ✅   |        |
+| `GET  /api/billing/admin/overview`            |        |      |  ✅   |        |
+| `GET  /api/billing/admin/webhooks/failed`     |        |      |  ✅   |        |
+| `POST /api/billing/admin/webhooks/:id/replay` |        |      |  ✅   |        |
+| `POST /api/billing/admin/payments/:id/refund` |        |      |  ✅   |        |
+| `POST /api/billing/webhooks/stripe`           |        |      |       |   ✅   |
 
 ### 1.2 Enums (shared with frontend)
 
 ```ts
 // Plan lifecycle
 enum BillingPlanStatus {
-  DRAFT    = 'draft',
-  ACTIVE   = 'active',
+  DRAFT = 'draft',
+  ACTIVE = 'active',
   ARCHIVED = 'archived',
 }
 
 // Price shape
 enum BillingPriceType {
-  ONE_TIME  = 'one_time',
+  ONE_TIME = 'one_time',
   RECURRING = 'recurring',
 }
 
 enum BillingRecurringInterval {
-  DAY   = 'day',
-  WEEK  = 'week',
+  DAY = 'day',
+  WEEK = 'week',
   MONTH = 'month',
-  YEAR  = 'year',
+  YEAR = 'year',
 }
 
 // Subscription lifecycle (mirrors Stripe)
 enum BillingSubscriptionStatus {
-  INCOMPLETE         = 'incomplete',
-  TRIALING           = 'trialing',
-  ACTIVE             = 'active',
-  PAST_DUE           = 'past_due',
-  CANCELED           = 'canceled',
-  UNPAID             = 'unpaid',
-  PAUSED             = 'paused',
+  INCOMPLETE = 'incomplete',
+  TRIALING = 'trialing',
+  ACTIVE = 'active',
+  PAST_DUE = 'past_due',
+  CANCELED = 'canceled',
+  UNPAID = 'unpaid',
+  PAUSED = 'paused',
   INCOMPLETE_EXPIRED = 'incomplete_expired',
 }
 
 // Payment lifecycle
 enum BillingPaymentStatus {
-  CHECKOUT_CREATED     = 'checkout_created',
-  PENDING              = 'pending',
-  SUCCEEDED            = 'succeeded',
-  FAILED               = 'failed',
-  CANCELED             = 'canceled',
-  REFUNDED             = 'refunded',
-  PARTIALLY_REFUNDED   = 'partially_refunded',
+  CHECKOUT_CREATED = 'checkout_created',
+  PENDING = 'pending',
+  SUCCEEDED = 'succeeded',
+  FAILED = 'failed',
+  CANCELED = 'canceled',
+  REFUNDED = 'refunded',
+  PARTIALLY_REFUNDED = 'partially_refunded',
 }
 
 // Invoice lifecycle
 enum BillingInvoiceStatus {
-  DRAFT          = 'draft',
-  OPEN           = 'open',
-  PAID           = 'paid',
-  VOID           = 'void',
-  UNCOLLECTIBLE  = 'uncollectible',
+  DRAFT = 'draft',
+  OPEN = 'open',
+  PAID = 'paid',
+  VOID = 'void',
+  UNCOLLECTIBLE = 'uncollectible',
 }
 
 // Transaction (charges + refunds)
-enum BillingTransactionType   { CHARGE = 'charge', REFUND = 'refund' }
-enum BillingTransactionStatus { PENDING = 'pending', SUCCEEDED = 'succeeded', FAILED = 'failed' }
+enum BillingTransactionType {
+  CHARGE = 'charge',
+  REFUND = 'refund',
+}
+enum BillingTransactionStatus {
+  PENDING = 'pending',
+  SUCCEEDED = 'succeeded',
+  FAILED = 'failed',
+}
 
 // Webhook event
 enum BillingWebhookEventStatus {
-  RECEIVED  = 'received',
+  RECEIVED = 'received',
   PROCESSED = 'processed',
-  FAILED    = 'failed',
-  IGNORED   = 'ignored',
+  FAILED = 'failed',
+  IGNORED = 'ignored',
 }
 
 // Where an entitlement came from
 enum BillingEntitlementSourceType {
-  SUBSCRIPTION   = 'subscription',
+  SUBSCRIPTION = 'subscription',
   ONE_TIME_PAYMENT = 'one_time_payment',
-  MANUAL         = 'manual',
+  MANUAL = 'manual',
 }
 
 // Webhook ACK kinds (response enum)
@@ -136,24 +144,24 @@ type BillingWebhookAckKind = 'processed' | 'duplicate' | 'ignored' | 'failed';
 
 All errors are translated by the global `GlobalExceptionFilter`.
 
-| HTTP | Meaning                                                                                       | Body shape                                                                                  |
-| ---- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| 400  | Validation / business rule (`ValidationPipe`, `BadRequestException`, custom `BillingError`)   | `{ "statusCode": 400, "message": "...", "error": "Bad Request" }`                           |
-| 401  | Missing or invalid JWT                                                                        | `{ "statusCode": 401, "message": "Unauthorized" }`                                          |
-| 403  | Forbidden — admin-only route, or `FeatureAccessGuard` denies a feature key                    | `{ "statusCode": 403, "message": "Forbidden ..." }`                                         |
-| 404  | Resource not found (price, plan, payment, webhook event, customer)                            | `{ "statusCode": 404, "message": "... not found." }`                                        |
-| 409  | Conflict — duplicate plan code, duplicate Stripe price, price not active, etc.               | `{ "statusCode": 409, "message": "..." }`                                                   |
-| 422  | Webhook handler error (e.g. unrecognised subscription) — Stripe will retry                   | `{ "statusCode": 422, "message": "..." }`                                                   |
-| 429  | Rate limit exceeded (global `ThrottlerGuard`); webhook is exempt                              | `{ "statusCode": 429, "message": "ThrottlerException: Too Many Requests" }`                 |
+| HTTP | Meaning                                                                                     | Body shape                                                                  |
+| ---- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| 400  | Validation / business rule (`ValidationPipe`, `BadRequestException`, custom `BillingError`) | `{ "statusCode": 400, "message": "...", "error": "Bad Request" }`           |
+| 401  | Missing or invalid JWT                                                                      | `{ "statusCode": 401, "message": "Unauthorized" }`                          |
+| 403  | Forbidden — admin-only route, or `FeatureAccessGuard` denies a feature key                  | `{ "statusCode": 403, "message": "Forbidden ..." }`                         |
+| 404  | Resource not found (price, plan, payment, webhook event, customer)                          | `{ "statusCode": 404, "message": "... not found." }`                        |
+| 409  | Conflict — duplicate plan code, duplicate Stripe price, price not active, etc.              | `{ "statusCode": 409, "message": "..." }`                                   |
+| 422  | Webhook handler error (e.g. unrecognised subscription) — Stripe will retry                  | `{ "statusCode": 422, "message": "..." }`                                   |
+| 429  | Rate limit exceeded (global `ThrottlerGuard`); webhook is exempt                            | `{ "statusCode": 429, "message": "ThrottlerException: Too Many Requests" }` |
 
 ### 1.4 Required Headers
 
-| Header               | Where                                          | Notes                                                                                  |
-| -------------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `Authorization`      | All authed user/admin endpoints                | `Bearer <access_token>` (cookie `sanad_auth_token` is also accepted)                   |
-| `Idempotency-Key`    | `portal/session`, `checkout/*`, admin refund   | Required. 1–255 chars, trimmed. Server caches the response for 24h.                    |
-| `Content-Type`       | All `POST`/`PATCH` endpoints                   | `application/json`                                                                     |
-| `Stripe-Signature`   | `webhooks/stripe` (set by Stripe, not browser) | Required by Stripe; missing → `400 Bad Request`                                        |
+| Header             | Where                                          | Notes                                                                |
+| ------------------ | ---------------------------------------------- | -------------------------------------------------------------------- |
+| `Authorization`    | All authed user/admin endpoints                | `Bearer <access_token>` (cookie `flick_auth_token` is also accepted) |
+| `Idempotency-Key`  | `portal/session`, `checkout/*`, admin refund   | Required. 1–255 chars, trimmed. Server caches the response for 24h.  |
+| `Content-Type`     | All `POST`/`PATCH` endpoints                   | `application/json`                                                   |
+| `Stripe-Signature` | `webhooks/stripe` (set by Stripe, not browser) | Required by Stripe; missing → `400 Bad Request`                      |
 
 > **Idempotency contract**: same key + **same body** → cached response. Same key + **different body** → `409 Conflict`. Always send the same key on retries triggered by the same user action.
 
@@ -165,144 +173,144 @@ The fields below are the ones the **frontend actually sees** in API responses. I
 
 ### 2.1 `BillingCustomer`
 
-| Field              | Type             | Notes                                                       |
-| ------------------ | ---------------- | ----------------------------------------------------------- |
-| `id`               | UUID string      | Local row id                                                |
-| `userId`           | number           | Application user id                                         |
-| `stripeCustomerId` | string           | `cus_*` — safe to expose, not a secret                      |
-| `email`            | string           | Mirrored from the user                                      |
-| `name`             | string \| null   | Mirrored from the user                                      |
-| `createdAt`        | ISO 8601         |                                                             |
-| `updatedAt`        | ISO 8601         |                                                             |
+| Field              | Type           | Notes                                  |
+| ------------------ | -------------- | -------------------------------------- |
+| `id`               | UUID string    | Local row id                           |
+| `userId`           | number         | Application user id                    |
+| `stripeCustomerId` | string         | `cus_*` — safe to expose, not a secret |
+| `email`            | string         | Mirrored from the user                 |
+| `name`             | string \| null | Mirrored from the user                 |
+| `createdAt`        | ISO 8601       |                                        |
+| `updatedAt`        | ISO 8601       |                                        |
 
 ### 2.2 `BillingPlan` (admin + public variants)
 
-| Field         | Type                                              | Notes                                                  |
-| ------------- | ------------------------------------------------- | ------------------------------------------------------ |
-| `id`          | UUID                                              |                                                        |
-| `code`        | string                                            | Stable; e.g. `pro_monthly`                             |
-| `name`        | string                                            | Display name                                           |
-| `description` | string \| null                                    |                                                        |
-| `status`      | `BillingPlanStatus`                               | `draft` \| `active` \| `archived` (admin only)         |
-| `features`    | `string[]`                                        | Stable feature keys (e.g. `["premium_reports"]`)       |
-| `prices`      | `BillingPrice[]`                                  | Empty array if no active prices (public omits the plan)|
-| `createdAt`   | ISO 8601                                          | Admin only                                             |
-| `updatedAt`   | ISO 8601                                          | Admin only                                             |
+| Field         | Type                | Notes                                                   |
+| ------------- | ------------------- | ------------------------------------------------------- |
+| `id`          | UUID                |                                                         |
+| `code`        | string              | Stable; e.g. `pro_monthly`                              |
+| `name`        | string              | Display name                                            |
+| `description` | string \| null      |                                                         |
+| `status`      | `BillingPlanStatus` | `draft` \| `active` \| `archived` (admin only)          |
+| `features`    | `string[]`          | Stable feature keys (e.g. `["premium_reports"]`)        |
+| `prices`      | `BillingPrice[]`    | Empty array if no active prices (public omits the plan) |
+| `createdAt`   | ISO 8601            | Admin only                                              |
+| `updatedAt`   | ISO 8601            | Admin only                                              |
 
 > Public variant (`BillingPublicPlanResponseDto`) returns only `id`, `code`, `name`, `description`, `features`, `prices` — no `status`/`createdAt`/`updatedAt`, and **only `status=active` plans with at least one active price are returned**.
 
 ### 2.3 `BillingPrice`
 
-| Field              | Type                          | Notes                                                      |
-| ------------------ | ----------------------------- | ---------------------------------------------------------- |
-| `id`               | UUID                          | **This is the value the frontend must send back.**         |
-| `planId`           | UUID                          |                                                            |
-| `stripePriceId`    | string                        | `price_*` — never sent by the client                       |
-| `stripeProductId`  | string \| null                | `prod_*`                                                   |
-| `currency`         | string                        | 3-letter lowercase ISO-4217 (`usd`, `eur`, …)              |
-| `unitAmount`       | number                        | Amount in the **smallest** currency unit (cents for `usd`)|
-| `type`             | `BillingPriceType`            | `one_time` \| `recurring`                                  |
-| `interval`         | `BillingRecurringInterval\|null` | `day`/`week`/`month`/`year`; required for `recurring`    |
-| `trialPeriodDays`  | number \| null                | Plan-level trial default; can be overridden per checkout   |
-| `active`           | boolean                       | Inactive prices are hidden on the public list              |
-| `createdAt`        | ISO 8601                      |                                                            |
-| `updatedAt`        | ISO 8601                      |                                                            |
+| Field             | Type                             | Notes                                                      |
+| ----------------- | -------------------------------- | ---------------------------------------------------------- |
+| `id`              | UUID                             | **This is the value the frontend must send back.**         |
+| `planId`          | UUID                             |                                                            |
+| `stripePriceId`   | string                           | `price_*` — never sent by the client                       |
+| `stripeProductId` | string \| null                   | `prod_*`                                                   |
+| `currency`        | string                           | 3-letter lowercase ISO-4217 (`usd`, `eur`, …)              |
+| `unitAmount`      | number                           | Amount in the **smallest** currency unit (cents for `usd`) |
+| `type`            | `BillingPriceType`               | `one_time` \| `recurring`                                  |
+| `interval`        | `BillingRecurringInterval\|null` | `day`/`week`/`month`/`year`; required for `recurring`      |
+| `trialPeriodDays` | number \| null                   | Plan-level trial default; can be overridden per checkout   |
+| `active`          | boolean                          | Inactive prices are hidden on the public list              |
+| `createdAt`       | ISO 8601                         |                                                            |
+| `updatedAt`       | ISO 8601                         |                                                            |
 
 ### 2.4 `BillingSubscription` (internal — not directly returned)
 
-| Field                     | Type                            |
-| ------------------------- | ------------------------------- |
-| `id`                      | UUID                            |
-| `userId`                  | number                          |
-| `billingCustomerId`       | UUID                            |
-| `planId`                  | UUID \| null                    |
-| `priceId`                 | UUID \| null                    |
-| `stripeSubscriptionId`    | string                          |
-| `stripeCheckoutSessionId` | string \| null                  |
-| `status`                  | `BillingSubscriptionStatus`     |
-| `currentPeriodStart`      | Date \| null                    |
-| `currentPeriodEnd`        | Date \| null                    |
-| `trialEnd`                | Date \| null                    |
-| `cancelAtPeriodEnd`       | boolean                         |
-| `canceledAt`              | Date \| null                    |
-| `latestInvoiceId`         | string \| null                  |
+| Field                     | Type                        |
+| ------------------------- | --------------------------- |
+| `id`                      | UUID                        |
+| `userId`                  | number                      |
+| `billingCustomerId`       | UUID                        |
+| `planId`                  | UUID \| null                |
+| `priceId`                 | UUID \| null                |
+| `stripeSubscriptionId`    | string                      |
+| `stripeCheckoutSessionId` | string \| null              |
+| `status`                  | `BillingSubscriptionStatus` |
+| `currentPeriodStart`      | Date \| null                |
+| `currentPeriodEnd`        | Date \| null                |
+| `trialEnd`                | Date \| null                |
+| `cancelAtPeriodEnd`       | boolean                     |
+| `canceledAt`              | Date \| null                |
+| `latestInvoiceId`         | string \| null              |
 
 ### 2.5 `BillingPayment` (internal — surfaced indirectly)
 
-| Field                      | Type                       |
-| -------------------------- | -------------------------- |
-| `id`                       | UUID                       |
-| `userId`                   | number                     |
-| `billingCustomerId`        | UUID                       |
-| `priceId`                  | UUID \| null               |
-| `stripeCheckoutSessionId`  | string \| null             |
-| `stripePaymentIntentId`    | string \| null             |
-| `amount`                   | number (minor units)       |
-| `amountRefunded`           | number (minor units)       |
-| `currency`                 | string                     |
-| `status`                   | `BillingPaymentStatus`     |
-| `description`              | string \| null             |
+| Field                     | Type                   |
+| ------------------------- | ---------------------- |
+| `id`                      | UUID                   |
+| `userId`                  | number                 |
+| `billingCustomerId`       | UUID                   |
+| `priceId`                 | UUID \| null           |
+| `stripeCheckoutSessionId` | string \| null         |
+| `stripePaymentIntentId`   | string \| null         |
+| `amount`                  | number (minor units)   |
+| `amountRefunded`          | number (minor units)   |
+| `currency`                | string                 |
+| `status`                  | `BillingPaymentStatus` |
+| `description`             | string \| null         |
 
 ### 2.6 `BillingInvoice` (internal)
 
-| Field               | Type                        |
-| ------------------- | --------------------------- |
-| `id`                | UUID                        |
-| `userId`            | number                      |
-| `subscriptionId`    | UUID \| null                |
-| `stripeInvoiceId`   | string                      |
-| `number`            | string \| null              |
-| `status`            | `BillingInvoiceStatus`      |
-| `currency`          | string                      |
-| `subtotal`, `total` | number                      |
-| `amountPaid`        | number                      |
-| `amountDue`         | number                      |
-| `hostedInvoiceUrl`  | string \| null              |
-| `invoicePdf`        | string \| null              |
-| `periodStart`       | Date \| null                |
-| `periodEnd`         | Date \| null                |
-| `paidAt`            | Date \| null                |
+| Field               | Type                   |
+| ------------------- | ---------------------- |
+| `id`                | UUID                   |
+| `userId`            | number                 |
+| `subscriptionId`    | UUID \| null           |
+| `stripeInvoiceId`   | string                 |
+| `number`            | string \| null         |
+| `status`            | `BillingInvoiceStatus` |
+| `currency`          | string                 |
+| `subtotal`, `total` | number                 |
+| `amountPaid`        | number                 |
+| `amountDue`         | number                 |
+| `hostedInvoiceUrl`  | string \| null         |
+| `invoicePdf`        | string \| null         |
+| `periodStart`       | Date \| null           |
+| `periodEnd`         | Date \| null           |
+| `paidAt`            | Date \| null           |
 
 ### 2.7 `BillingTransaction` (internal)
 
-| Field                  | Type                          |
-| ---------------------- | ----------------------------- |
-| `id`                   | UUID                          |
-| `userId`               | number                        |
-| `paymentId`            | UUID \| null                  |
-| `invoiceId`            | UUID \| null                  |
-| `subscriptionId`       | UUID \| null                  |
-| `type`                 | `BillingTransactionType`      |
-| `amount`               | number                        |
-| `currency`             | string                        |
-| `status`               | `BillingTransactionStatus`    |
-| `stripePaymentIntentId`| string \| null                |
-| `stripeChargeId`       | string \| null                |
-| `stripeRefundId`       | string \| null                |
-| `occurredAt`           | Date                          |
+| Field                   | Type                       |
+| ----------------------- | -------------------------- |
+| `id`                    | UUID                       |
+| `userId`                | number                     |
+| `paymentId`             | UUID \| null               |
+| `invoiceId`             | UUID \| null               |
+| `subscriptionId`        | UUID \| null               |
+| `type`                  | `BillingTransactionType`   |
+| `amount`                | number                     |
+| `currency`              | string                     |
+| `status`                | `BillingTransactionStatus` |
+| `stripePaymentIntentId` | string \| null             |
+| `stripeChargeId`        | string \| null             |
+| `stripeRefundId`        | string \| null             |
+| `occurredAt`            | Date                       |
 
 ### 2.8 `BillingEntitlement` (returned by `GET /entitlements`)
 
-| Field         | Type                                  | Notes                                          |
-| ------------- | ------------------------------------- | ---------------------------------------------- |
-| `featureKey`  | string                                | Stable feature key (e.g. `premium_reports`)    |
-| `sourceType`  | `BillingEntitlementSourceType`        |                                                |
-| `sourceId`    | UUID \| null                          | Local id of the source row; `null` for `manual`|
-| `startsAt`    | Date \| null                          | Stored, not enforced in v1                     |
-| `endsAt`      | Date \| null                          | Stored, not enforced in v1                     |
+| Field        | Type                           | Notes                                           |
+| ------------ | ------------------------------ | ----------------------------------------------- |
+| `featureKey` | string                         | Stable feature key (e.g. `premium_reports`)     |
+| `sourceType` | `BillingEntitlementSourceType` |                                                 |
+| `sourceId`   | UUID \| null                   | Local id of the source row; `null` for `manual` |
+| `startsAt`   | Date \| null                   | Stored, not enforced in v1                      |
+| `endsAt`     | Date \| null                   | Stored, not enforced in v1                      |
 
 ### 2.9 `BillingWebhookEvent` (admin)
 
-| Field                | Type                          | Notes                                          |
-| -------------------- | ----------------------------- | ---------------------------------------------- |
-| `id`                 | UUID                          | Local row id (use this for `replay`)           |
-| `stripeEventId`      | string                        | `evt_*`                                        |
-| `eventType`          | string                        | e.g. `invoice.paid`                            |
-| `errorMessage`       | string \| null                | Set on `failed`                                |
-| `processingAttempts` | number                        |                                                |
-| `status`             | `BillingWebhookEventStatus`   |                                                |
-| `receivedAt`         | Date                          |                                                |
-| `processedAt`        | Date \| null                  |                                                |
+| Field                | Type                        | Notes                                |
+| -------------------- | --------------------------- | ------------------------------------ |
+| `id`                 | UUID                        | Local row id (use this for `replay`) |
+| `stripeEventId`      | string                      | `evt_*`                              |
+| `eventType`          | string                      | e.g. `invoice.paid`                  |
+| `errorMessage`       | string \| null              | Set on `failed`                      |
+| `processingAttempts` | number                      |                                      |
+| `status`             | `BillingWebhookEventStatus` |                                      |
+| `receivedAt`         | Date                        |                                      |
+| `processedAt`        | Date \| null                |                                      |
 
 ---
 
@@ -386,15 +394,15 @@ Host: api.example.com
 
 **Errors**
 
-| Status | When                               |
-| ------ | ---------------------------------- |
+| Status | When                                  |
+| ------ | ------------------------------------- |
 | 400    | `currency` is not 3 lowercase letters |
 
 ---
 
 ## 4. Authenticated User Endpoints
 
-All endpoints in this section require a valid JWT (`Authorization: Bearer <token>` or the `sanad_auth_token` cookie). The current user is resolved from the JWT `id` claim; you never send the user id in the path or body.
+All endpoints in this section require a valid JWT (`Authorization: Bearer <token>` or the `flick_auth_token` cookie). The current user is resolved from the JWT `id` claim; you never send the user id in the path or body.
 
 ### 4.1 `GET /api/billing/customer` – Get (or lazily create) the billing customer
 
@@ -423,9 +431,9 @@ Authorization: Bearer <access_token>
 
 **Errors**
 
-| Status | When                          |
-| ------ | ----------------------------- |
-| 401    | Missing/invalid JWT           |
+| Status | When                |
+| ------ | ------------------- |
+| 401    | Missing/invalid JWT |
 
 ### 4.2 `POST /api/billing/customer/sync` – Force re-link with Stripe
 
@@ -464,9 +472,9 @@ Creates a short-lived Stripe Customer Portal URL and returns it. The frontend sh
 
 **Required headers**
 
-| Header            | Value         |
-| ----------------- | ------------- |
-| `Idempotency-Key` | `<unique key>`|
+| Header            | Value          |
+| ----------------- | -------------- |
+| `Idempotency-Key` | `<unique key>` |
 
 **Request body**: none.
 
@@ -488,11 +496,11 @@ Idempotency-Key: 8a7c3e1d-4b21-4a2f-9a6b-1a2b3c4d5e6f
 
 **Errors**
 
-| Status | When                                                                |
-| ------ | ------------------------------------------------------------------- |
-| 400    | `Idempotency-Key` header missing/empty                              |
-| 401    | Missing/invalid JWT                                                 |
-| 409    | Idempotency key reused with a different body                        |
+| Status | When                                         |
+| ------ | -------------------------------------------- |
+| 400    | `Idempotency-Key` header missing/empty       |
+| 401    | Missing/invalid JWT                          |
+| 409    | Idempotency key reused with a different body |
 
 ### 4.4 `POST /api/billing/checkout/one-time` – Start a one-time Checkout
 
@@ -500,17 +508,17 @@ Creates a Stripe Checkout Session for a one-time payment and returns the redirec
 
 **Required headers**
 
-| Header            | Value         |
-| ----------------- | ------------- |
-| `Idempotency-Key` | `<unique key>`|
+| Header            | Value          |
+| ----------------- | -------------- |
+| `Idempotency-Key` | `<unique key>` |
 
 **Request body (`BillingOneTimeCheckoutRequestDto`)**
 
-| Field                 | Type    | Required | Default | Constraints                                                                  |
-| --------------------- | ------- | :------: | ------- | ---------------------------------------------------------------------------- |
-| `priceId`             | UUID    |   ✅     |         | Local `BillingPrice` UUID from the public plans endpoint                    |
-| `quantity`            | integer |          | `1`     | 1–100                                                                        |
-| `allowPromotionCodes` | boolean |          | `true`  |                                                                              |
+| Field                 | Type    | Required | Default | Constraints                                              |
+| --------------------- | ------- | :------: | ------- | -------------------------------------------------------- |
+| `priceId`             | UUID    |    ✅    |         | Local `BillingPrice` UUID from the public plans endpoint |
+| `quantity`            | integer |          | `1`     | 1–100                                                    |
+| `allowPromotionCodes` | boolean |          | `true`  |                                                          |
 
 **Example request**
 
@@ -554,19 +562,19 @@ Creates a Stripe Checkout Session for a recurring plan. **One active subscriptio
 
 **Required headers**
 
-| Header            | Value         |
-| ----------------- | ------------- |
-| `Idempotency-Key` | `<unique key>`|
+| Header            | Value          |
+| ----------------- | -------------- |
+| `Idempotency-Key` | `<unique key>` |
 
 **Request body (`BillingSubscriptionCheckoutRequestDto`)**
 
-| Field                 | Type    | Required | Default | Constraints                                                                                                  |
-| --------------------- | ------- | :------: | ------- | ------------------------------------------------------------------------------------------------------------ |
-| `priceId`             | UUID    |   ✅     |         | Local `BillingPrice` UUID of a **recurring** price                                                           |
-| `quantity`            | integer |          | `1`     | 1–100 (seats)                                                                                                |
+| Field                 | Type    | Required | Default | Constraints                                                                                                 |
+| --------------------- | ------- | :------: | ------- | ----------------------------------------------------------------------------------------------------------- |
+| `priceId`             | UUID    |    ✅    |         | Local `BillingPrice` UUID of a **recurring** price                                                          |
+| `quantity`            | integer |          | `1`     | 1–100 (seats)                                                                                               |
 | `clientReferenceId`   | string  |          |         | Max 100 chars; `[A-Za-z0-9._:-]+` only; forwarded to Stripe as `client_reference_id` and stored in metadata |
-| `trialDays`           | integer |          |         | 1–730; overrides the price-level `trialPeriodDays` if set                                                    |
-| `allowPromotionCodes` | boolean |          | `true`  |                                                                                                              |
+| `trialDays`           | integer |          |         | 1–730; overrides the price-level `trialPeriodDays` if set                                                   |
+| `allowPromotionCodes` | boolean |          | `true`  |                                                                                                             |
 
 **Example request**
 
@@ -596,12 +604,12 @@ Content-Type: application/json
 
 **Errors**
 
-| Status | When                                                                                                                              |
-| ------ | --------------------------------------------------------------------------------------------------------------------------------- |
-| 400    | `Idempotency-Key` missing; body validation; `clientReferenceId` contains disallowed characters                                      |
-| 401    | Missing/invalid JWT                                                                                                               |
-| 404    | `BillingPrice` or linked `BillingPlan` not found                                                                                  |
-| 409    | Price `inactive`; price is not `recurring`; plan is `archived`; user already has an active subscription                           |
+| Status | When                                                                                                    |
+| ------ | ------------------------------------------------------------------------------------------------------- |
+| 400    | `Idempotency-Key` missing; body validation; `clientReferenceId` contains disallowed characters          |
+| 401    | Missing/invalid JWT                                                                                     |
+| 404    | `BillingPrice` or linked `BillingPlan` not found                                                        |
+| 409    | Price `inactive`; price is not `recurring`; plan is `archived`; user already has an active subscription |
 
 ### 4.6 `GET /api/billing/entitlements` – List active feature entitlements
 
@@ -663,13 +671,13 @@ All routes require JWT + `UserRoleEnum.ADMIN`. Auth is enforced by `AuthGuard` +
 
 **Request body (`CreateBillingPlanDto`)**
 
-| Field         | Type                       | Required | Default      | Constraints                                                    |
-| ------------- | -------------------------- | :------: | ------------ | -------------------------------------------------------------- |
-| `code`        | string                     |   ✅     |              | 2–100 chars; `^[a-z0-9_-]+$` (e.g. `pro_monthly`)              |
-| `name`        | string                     |   ✅     |              | Max 255 chars                                                  |
-| `description` | string \| null             |          | `null`       |                                                                |
-| `status`      | `BillingPlanStatus`        |          | `draft`      |                                                                |
-| `features`    | `string[]`                 |          | `[]`         | Stable feature keys (e.g. `["premium_reports"]`)               |
+| Field         | Type                | Required | Default | Constraints                                       |
+| ------------- | ------------------- | :------: | ------- | ------------------------------------------------- |
+| `code`        | string              |    ✅    |         | 2–100 chars; `^[a-z0-9_-]+$` (e.g. `pro_monthly`) |
+| `name`        | string              |    ✅    |         | Max 255 chars                                     |
+| `description` | string \| null      |          | `null`  |                                                   |
+| `status`      | `BillingPlanStatus` |          | `draft` |                                                   |
+| `features`    | `string[]`          |          | `[]`    | Stable feature keys (e.g. `["premium_reports"]`)  |
 
 **Example request**
 
@@ -707,19 +715,19 @@ Content-Type: application/json
 
 **Errors**
 
-| Status | When                                            |
-| ------ | ----------------------------------------------- |
-| 400    | Validation error                                |
-| 401    | Missing/invalid JWT                             |
-| 403    | Authenticated user is not `ADMIN`               |
-| 409    | `code` already exists                           |
+| Status | When                              |
+| ------ | --------------------------------- |
+| 400    | Validation error                  |
+| 401    | Missing/invalid JWT               |
+| 403    | Authenticated user is not `ADMIN` |
+| 409    | `code` already exists             |
 
 ### 5.2 `GET /api/billing/admin/plans` – List all plans
 
 **Query (`ListBillingPlansQueryDto`)**
 
-| Field    | Type                | Required | Notes                                    |
-| -------- | ------------------- | :------: | ---------------------------------------- |
+| Field    | Type                | Required | Notes                                        |
+| -------- | ------------------- | :------: | -------------------------------------------- |
 | `status` | `BillingPlanStatus` |          | Optional filter: `draft`/`active`/`archived` |
 
 **Example request**
@@ -770,18 +778,18 @@ Authorization: Bearer <admin_token>
 
 **Path parameters**
 
-| Field | Type | Notes                       |
-| ----- | ---- | --------------------------- |
-| `id`  | UUID | Local `BillingPlan` id      |
+| Field | Type | Notes                  |
+| ----- | ---- | ---------------------- |
+| `id`  | UUID | Local `BillingPlan` id |
 
 **Request body (`UpdateBillingPlanDto`) — all fields optional**
 
-| Field         | Type                | Notes                              |
-| ------------- | ------------------- | ---------------------------------- |
-| `name`        | string              | Max 255                            |
-| `description` | string \| null      |                                    |
-| `status`      | `BillingPlanStatus` |                                    |
-| `features`    | `string[]`          |                                    |
+| Field         | Type                | Notes   |
+| ------------- | ------------------- | ------- |
+| `name`        | string              | Max 255 |
+| `description` | string \| null      |         |
+| `status`      | `BillingPlanStatus` |         |
+| `features`    | `string[]`          |         |
 
 **Example request**
 
@@ -807,9 +815,7 @@ Content-Type: application/json
     "description": "Pro features billed monthly.",
     "status": "active",
     "features": ["premium_reports", "team_export", "priority_support"],
-    "prices": [
-      { "...": "(see 5.2 for full shape)" }
-    ],
+    "prices": [{ "...": "(see 5.2 for full shape)" }],
     "createdAt": "2026-05-12T10:00:00.000Z",
     "updatedAt": "2026-05-12T11:42:00.000Z"
   }
@@ -818,12 +824,12 @@ Content-Type: application/json
 
 **Errors**
 
-| Status | When                              |
-| ------ | --------------------------------- |
-| 400    | Validation error                  |
-| 401    | Missing/invalid JWT               |
-| 403    | Not admin                         |
-| 404    | Plan not found (bad UUID)         |
+| Status | When                      |
+| ------ | ------------------------- |
+| 400    | Validation error          |
+| 401    | Missing/invalid JWT       |
+| 403    | Not admin                 |
+| 404    | Plan not found (bad UUID) |
 
 ### 5.4 `POST /api/billing/admin/plans/:id/archive` – Archive a plan
 
@@ -855,7 +861,7 @@ Authorization: Bearer <admin_token>
     "description": "Pro features billed monthly.",
     "status": "archived",
     "features": ["premium_reports"],
-    "prices": [ { "...": "(see 5.2)" } ],
+    "prices": [{ "...": "(see 5.2)" }],
     "createdAt": "2026-05-12T10:00:00.000Z",
     "updatedAt": "2026-05-13T09:00:00.000Z"
   }
@@ -864,11 +870,11 @@ Authorization: Bearer <admin_token>
 
 **Errors**
 
-| Status | When                              |
-| ------ | --------------------------------- |
-| 401    | Missing/invalid JWT               |
-| 403    | Not admin                         |
-| 404    | Plan not found                    |
+| Status | When                |
+| ------ | ------------------- |
+| 401    | Missing/invalid JWT |
+| 403    | Not admin           |
+| 404    | Plan not found      |
 
 ### 5.5 `POST /api/billing/admin/plans/:id/prices` – Add a Stripe price to a plan
 
@@ -882,16 +888,16 @@ Attaches a Stripe price reference (created in the Stripe Dashboard) to a local p
 
 **Request body (`AddBillingPriceDto`)**
 
-| Field             | Type                          | Required | Default | Constraints                              |
-| ----------------- | ----------------------------- | :------: | ------- | ---------------------------------------- |
-| `stripePriceId`   | string                        |   ✅     |         | Max 255; the `price_*` id from Stripe     |
-| `stripeProductId` | string \| null                |          |         | Max 255; `prod_*`                        |
-| `currency`        | string                        |   ✅     |         | 3 lowercase letters (`usd`)              |
-| `unitAmount`      | integer                       |   ✅     |         | ≥ 0, in **smallest** currency unit       |
-| `type`            | `BillingPriceType`            |   ✅     |         | `one_time` \| `recurring`                |
-| `interval`        | `BillingRecurringInterval\|null` |        |         | Required if `type=recurring`; null if `one_time` |
-| `trialPeriodDays` | integer \| null               |          |         | 0–365; only valid when `type=recurring`  |
-| `active`          | boolean                       |          | `true`  |                                          |
+| Field             | Type                             | Required | Default | Constraints                                      |
+| ----------------- | -------------------------------- | :------: | ------- | ------------------------------------------------ |
+| `stripePriceId`   | string                           |    ✅    |         | Max 255; the `price_*` id from Stripe            |
+| `stripeProductId` | string \| null                   |          |         | Max 255; `prod_*`                                |
+| `currency`        | string                           |    ✅    |         | 3 lowercase letters (`usd`)                      |
+| `unitAmount`      | integer                          |    ✅    |         | ≥ 0, in **smallest** currency unit               |
+| `type`            | `BillingPriceType`               |    ✅    |         | `one_time` \| `recurring`                        |
+| `interval`        | `BillingRecurringInterval\|null` |          |         | Required if `type=recurring`; null if `one_time` |
+| `trialPeriodDays` | integer \| null                  |          |         | 0–365; only valid when `type=recurring`          |
+| `active`          | boolean                          |          | `true`  |                                                  |
 
 **Example request — recurring**
 
@@ -947,13 +953,13 @@ Content-Type: application/json
 
 **Errors**
 
-| Status | When                                                                                |
-| ------ | ----------------------------------------------------------------------------------- |
+| Status | When                                                                                                                   |
+| ------ | ---------------------------------------------------------------------------------------------------------------------- |
 | 400    | Validation; shape conflict (`one_time` with `interval`, `recurring` without interval, `trialPeriodDays` on `one_time`) |
-| 401    | Missing/invalid JWT                                                                 |
-| 403    | Not admin                                                                           |
-| 404    | Plan not found                                                                      |
-| 409    | `stripePriceId` already exists in another plan                                      |
+| 401    | Missing/invalid JWT                                                                                                    |
+| 403    | Not admin                                                                                                              |
+| 404    | Plan not found                                                                                                         |
+| 409    | `stripePriceId` already exists in another plan                                                                         |
 
 ### 5.6 `GET /api/billing/admin/overview` – Operational snapshot
 
@@ -1037,9 +1043,9 @@ Re-dispatches a previously failed event through the existing handler pipeline. S
 
 **Path parameters**
 
-| Field | Type | Notes                                                              |
-| ----- | ---- | ------------------------------------------------------------------ |
-| `id`  | UUID | Local `billing_webhook_events.id` (not the Stripe `evt_*` id)      |
+| Field | Type | Notes                                                         |
+| ----- | ---- | ------------------------------------------------------------- |
+| `id`  | UUID | Local `billing_webhook_events.id` (not the Stripe `evt_*` id) |
 
 **Request body**: none.
 
@@ -1091,10 +1097,10 @@ Authorization: Bearer <admin_token>
 
 **Errors**
 
-| Status | When                                |
-| ------ | ----------------------------------- |
-| 401    | Missing/invalid JWT                 |
-| 403    | Not admin                           |
+| Status | When                                                             |
+| ------ | ---------------------------------------------------------------- |
+| 401    | Missing/invalid JWT                                              |
+| 403    | Not admin                                                        |
 | 404    | `id` not found (response body still shaped as a `failed` result) |
 
 > The "not found" case returns a 200 with `result.kind = "failed"` and `result.reason = "Webhook event <id> not found."` — handle both 404 and 200-with-failed in the UI.
@@ -1105,20 +1111,20 @@ Calls Stripe `refunds.create` for the underlying PaymentIntent, records a `Billi
 
 **Required headers**
 
-| Header            | Value         |
-| ----------------- | ------------- |
-| `Idempotency-Key` | `<unique key>`|
+| Header            | Value          |
+| ----------------- | -------------- |
+| `Idempotency-Key` | `<unique key>` |
 
 **Path parameters**
 
-| Field | Type | Notes                                  |
-| ----- | ---- | -------------------------------------- |
+| Field | Type | Notes                                                |
+| ----- | ---- | ---------------------------------------------------- |
 | `id`  | UUID | Local `BillingPayment` id (not the Stripe `pi_*` id) |
 
 **Request body (`BillingAdminRefundRequestDto`)**
 
-| Field    | Type    | Required | Default       | Constraints                                       |
-| -------- | ------- | :------: | ------------- | ------------------------------------------------- |
+| Field    | Type    | Required | Default        | Constraints                                                                          |
+| -------- | ------- | :------: | -------------- | ------------------------------------------------------------------------------------ |
 | `amount` | integer |          | full remaining | Amount in **minor units** to refund. Must be > 0 and ≤ remaining refundable balance. |
 
 > Send an empty body `{}` to perform a full refund. Send `{"amount": 500}` for a partial refund of 5.00 USD.
@@ -1159,12 +1165,12 @@ Content-Type: application/json
 
 **Errors**
 
-| Status | When                                                                                                            |
-| ------ | --------------------------------------------------------------------------------------------------------------- |
+| Status | When                                                                                                                                        |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | 400    | `Idempotency-Key` missing; `amount` ≤ 0 or > remaining refundable; payment status not refundable; no `stripePaymentIntentId` on the payment |
-| 401    | Missing/invalid JWT                                                                                             |
-| 403    | Not admin                                                                                                       |
-| 404    | `BillingPayment` not found                                                                                      |
+| 401    | Missing/invalid JWT                                                                                                                         |
+| 403    | Not admin                                                                                                                                   |
+| 404    | `BillingPayment` not found                                                                                                                  |
 
 ---
 
@@ -1192,19 +1198,19 @@ Content-Type: application/json
 
 `kind` values:
 
-| `kind`       | Meaning                                                                                  |
-| ------------ | ---------------------------------------------------------------------------------------- |
-| `processed`  | Event applied to local state.                                                             |
-| `duplicate`  | Already processed (idempotency hit on `stripeEventId`).                                  |
-| `ignored`    | Recognised event type that does not apply (e.g. `customer.updated` for a customer we don't track). `reason` explains why. |
-| `failed`     | Handler threw. Backend returns 5xx so Stripe retries with backoff. Admin can later replay. |
+| `kind`      | Meaning                                                                                                                   |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `processed` | Event applied to local state.                                                                                             |
+| `duplicate` | Already processed (idempotency hit on `stripeEventId`).                                                                   |
+| `ignored`   | Recognised event type that does not apply (e.g. `customer.updated` for a customer we don't track). `reason` explains why. |
+| `failed`    | Handler threw. Backend returns 5xx so Stripe retries with backoff. Admin can later replay.                                |
 
 **Error cases**
 
-| HTTP | When                                                   |
-| ---- | ------------------------------------------------------ |
-| 400  | `Stripe-Signature` missing or signature invalid        |
-| 5xx  | Unhandled exception; Stripe will retry                 |
+| HTTP | When                                            |
+| ---- | ----------------------------------------------- |
+| 400  | `Stripe-Signature` missing or signature invalid |
+| 5xx  | Unhandled exception; Stripe will retry          |
 
 ---
 
@@ -1292,8 +1298,10 @@ The backend stores and returns money in **minor units** (e.g. `1900` = $19.00 US
 
 ```ts
 function formatMoney(minor: number, currency: string): string {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: currency.toUpperCase() })
-    .format(minor / 100);
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: currency.toUpperCase(),
+  }).format(minor / 100);
 }
 // formatMoney(1900, 'usd') => "$19.00"
 // formatMoney(1999, 'eur') => "€19.99"
@@ -1320,26 +1328,26 @@ There are **no server-rendered feature flags** in the public API — the fronten
 
 ## 8. Edge Cases & Gotchas
 
-| Case                                                                                              | Behaviour                                                                                              | Frontend action                                                                                              |
-| ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
-| User reloads the success page mid-Checkout                                                        | The success page is server-rendered, no backend round-trip is required                                  | Show "Finalising your account…" and poll `/api/billing/entitlements` (max ~30s)                              |
-| User clicks **Subscribe** twice within seconds                                                     | The first request may be in-flight (idempotency reservation in `in_progress`); the second gets cached  | Disable the button on click; rely on the same `Idempotency-Key` to deduplicate                                |
-| Idempotency key reused with different body                                                        | `409 Conflict` (`BillingIdempotencyConflictError`)                                                     | This is a client bug — log it, surface a generic error, regenerate the key on the next click                |
-| `Idempotency-Key` header missing                                                                  | `400 Bad Request`                                                                                      | Frontend bug; never retry without attaching the header                                                      |
-| Public plans list returns `[]`                                                                    | No active plans (or none for the requested currency)                                                   | Render an "Our plans are being updated" empty state                                                          |
-| `price.type` mismatch (e.g. calling subscription checkout with a `one_time` price)                 | `409 Conflict`                                                                                         | Client bug; the public endpoint already returns the price `type` — filter the UI before showing the button  |
-| `userId` claim missing from JWT                                                                   | The `GetUser` decorator returns a shape without `id` → guarded routes 401                              | Frontend should not hit these endpoints while logged out                                                    |
-| One active subscription per user                                                                   | `POST /api/billing/checkout/subscription` returns `409` for a user who already has a `BillingSubscription` in `incomplete/trialing/active/past_due/paused/unpaid` | Show "Manage your plan" pointing to the Portal                                                               |
-| Refund on a refunded payment                                                                      | `400 Bad Request` "already fully refunded"                                                              | Disable the refund button once `payment.amountRefunded >= payment.amount`                                    |
-| Webhook event id not found on replay                                                              | The endpoint still returns 200 with `result.kind = "failed"` and a `reason`                            | Refresh the failed-webhooks list and remove the row                                                         |
-| Stripe price id conflicts during plan attach                                                      | `409 Conflict` from the unique index                                                                   | Re-fetch the admin list, check for a row with the same `stripePriceId`                                       |
-| Currency filter doesn't match the active price                                                    | The plan is dropped from the public list (no prices match)                                              | Fall back to a "all currencies" call (omit `?currency=`)                                                     |
-| `featureKey` is case-sensitive                                                                    | The backend returns keys exactly as configured on the plan                                             | Use the literal string from the plan payload; do not lowercase client-side                                    |
-| `trialDays` requested on a `one_time` price                                                       | Checkout service throws `BillingError` (price type mismatch caught earlier, so usually `409`)         | Client bug; don't show a trial input for one-time prices                                                     |
-| `user.stripeCustomerId` already exists but no `BillingCustomer` row                                | `getOrCreateForUser` and `customer/sync` both backfill automatically                                    | No action; just call `GET /api/billing/customer` after login                                                 |
-| `STRIPE_PORTAL_RETURN_URL` missing in env                                                          | Portal session creation throws 500                                                                     | Server-side config issue; surface a generic "Billing is temporarily unavailable" to the user                 |
-| Rate limit hit (`429`)                                                                            | Global `ThrottlerGuard`                                                                                | Back off; show a friendly "Too many requests, please try again" message                                      |
-| CORS                                                                                              | `credentials: true`, allowed headers include `Content-Type`, `Authorization`, `Cookie`                 | Configure the API client with `withCredentials: true` (or `credentials: 'include'`)                          |
+| Case                                                                               | Behaviour                                                                                                                                                         | Frontend action                                                                                            |
+| ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| User reloads the success page mid-Checkout                                         | The success page is server-rendered, no backend round-trip is required                                                                                            | Show "Finalising your account…" and poll `/api/billing/entitlements` (max ~30s)                            |
+| User clicks **Subscribe** twice within seconds                                     | The first request may be in-flight (idempotency reservation in `in_progress`); the second gets cached                                                             | Disable the button on click; rely on the same `Idempotency-Key` to deduplicate                             |
+| Idempotency key reused with different body                                         | `409 Conflict` (`BillingIdempotencyConflictError`)                                                                                                                | This is a client bug — log it, surface a generic error, regenerate the key on the next click               |
+| `Idempotency-Key` header missing                                                   | `400 Bad Request`                                                                                                                                                 | Frontend bug; never retry without attaching the header                                                     |
+| Public plans list returns `[]`                                                     | No active plans (or none for the requested currency)                                                                                                              | Render an "Our plans are being updated" empty state                                                        |
+| `price.type` mismatch (e.g. calling subscription checkout with a `one_time` price) | `409 Conflict`                                                                                                                                                    | Client bug; the public endpoint already returns the price `type` — filter the UI before showing the button |
+| `userId` claim missing from JWT                                                    | The `GetUser` decorator returns a shape without `id` → guarded routes 401                                                                                         | Frontend should not hit these endpoints while logged out                                                   |
+| One active subscription per user                                                   | `POST /api/billing/checkout/subscription` returns `409` for a user who already has a `BillingSubscription` in `incomplete/trialing/active/past_due/paused/unpaid` | Show "Manage your plan" pointing to the Portal                                                             |
+| Refund on a refunded payment                                                       | `400 Bad Request` "already fully refunded"                                                                                                                        | Disable the refund button once `payment.amountRefunded >= payment.amount`                                  |
+| Webhook event id not found on replay                                               | The endpoint still returns 200 with `result.kind = "failed"` and a `reason`                                                                                       | Refresh the failed-webhooks list and remove the row                                                        |
+| Stripe price id conflicts during plan attach                                       | `409 Conflict` from the unique index                                                                                                                              | Re-fetch the admin list, check for a row with the same `stripePriceId`                                     |
+| Currency filter doesn't match the active price                                     | The plan is dropped from the public list (no prices match)                                                                                                        | Fall back to a "all currencies" call (omit `?currency=`)                                                   |
+| `featureKey` is case-sensitive                                                     | The backend returns keys exactly as configured on the plan                                                                                                        | Use the literal string from the plan payload; do not lowercase client-side                                 |
+| `trialDays` requested on a `one_time` price                                        | Checkout service throws `BillingError` (price type mismatch caught earlier, so usually `409`)                                                                     | Client bug; don't show a trial input for one-time prices                                                   |
+| `user.stripeCustomerId` already exists but no `BillingCustomer` row                | `getOrCreateForUser` and `customer/sync` both backfill automatically                                                                                              | No action; just call `GET /api/billing/customer` after login                                               |
+| `STRIPE_PORTAL_RETURN_URL` missing in env                                          | Portal session creation throws 500                                                                                                                                | Server-side config issue; surface a generic "Billing is temporarily unavailable" to the user               |
+| Rate limit hit (`429`)                                                             | Global `ThrottlerGuard`                                                                                                                                           | Back off; show a friendly "Too many requests, please try again" message                                    |
+| CORS                                                                               | `credentials: true`, allowed headers include `Content-Type`, `Authorization`, `Cookie`                                                                            | Configure the API client with `withCredentials: true` (or `credentials: 'include'`)                        |
 
 ---
 
@@ -1360,25 +1368,25 @@ There are **no server-rendered feature flags** in the public API — the fronten
 
 ## 10. Quick Reference — All Endpoints
 
-| Method | Path                                                  | Auth         | Idempotency-Key | Notes                                                       |
-| :----- | :---------------------------------------------------- | :----------- | :-------------: | :---------------------------------------------------------- |
-| GET    | `/api/billing/plans/public`                           | Public       |       No        | Active plans + active prices; optional `?currency=usd`      |
-| GET    | `/api/billing/customer`                               | User         |       No        | Get or lazily create the local customer                     |
-| POST   | `/api/billing/customer/sync`                          | User         |       No        | Force re-link with Stripe                                  |
-| POST   | `/api/billing/portal/session`                         | User         |     **Yes**     | Returns the Customer Portal URL                             |
-| POST   | `/api/billing/checkout/one-time`                      | User         |     **Yes**     | One-time Checkout — body `{ priceId, quantity?, allowPromotionCodes? }` |
-| POST   | `/api/billing/checkout/subscription`                  | User         |     **Yes**     | Subscription Checkout — body `{ priceId, quantity?, clientReferenceId?, trialDays?, allowPromotionCodes? }` |
-| GET    | `/api/billing/entitlements`                           | User         |       No        | Active feature entitlements                                 |
-| POST   | `/api/billing/admin/plans`                            | Admin        |       No        | Create a plan                                               |
-| GET    | `/api/billing/admin/plans`                            | Admin        |       No        | List plans; optional `?status=...`                          |
-| PATCH  | `/api/billing/admin/plans/:id`                        | Admin        |       No        | Update a plan (not `code`)                                  |
-| POST   | `/api/billing/admin/plans/:id/archive`                | Admin        |       No        | Archive a plan                                              |
-| POST   | `/api/billing/admin/plans/:id/prices`                 | Admin        |       No        | Attach a Stripe price to a plan                             |
-| GET    | `/api/billing/admin/overview`                         | Admin        |       No        | Operational snapshot                                        |
-| GET    | `/api/billing/admin/webhooks/failed`                  | Admin        |       No        | List up to 100 failed webhook events                        |
-| POST   | `/api/billing/admin/webhooks/:id/replay`              | Admin        |       No        | Replay a failed webhook event                               |
-| POST   | `/api/billing/admin/payments/:id/refund`              | Admin        |     **Yes**     | Refund — body `{ amount? }` (omit for full refund)          |
-| POST   | `/api/billing/webhooks/stripe`                        | Stripe-only  |       No        | Server-to-server; not called by the browser                 |
+| Method | Path                                     | Auth        | Idempotency-Key | Notes                                                                                                       |
+| :----- | :--------------------------------------- | :---------- | :-------------: | :---------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/billing/plans/public`              | Public      |       No        | Active plans + active prices; optional `?currency=usd`                                                      |
+| GET    | `/api/billing/customer`                  | User        |       No        | Get or lazily create the local customer                                                                     |
+| POST   | `/api/billing/customer/sync`             | User        |       No        | Force re-link with Stripe                                                                                   |
+| POST   | `/api/billing/portal/session`            | User        |     **Yes**     | Returns the Customer Portal URL                                                                             |
+| POST   | `/api/billing/checkout/one-time`         | User        |     **Yes**     | One-time Checkout — body `{ priceId, quantity?, allowPromotionCodes? }`                                     |
+| POST   | `/api/billing/checkout/subscription`     | User        |     **Yes**     | Subscription Checkout — body `{ priceId, quantity?, clientReferenceId?, trialDays?, allowPromotionCodes? }` |
+| GET    | `/api/billing/entitlements`              | User        |       No        | Active feature entitlements                                                                                 |
+| POST   | `/api/billing/admin/plans`               | Admin       |       No        | Create a plan                                                                                               |
+| GET    | `/api/billing/admin/plans`               | Admin       |       No        | List plans; optional `?status=...`                                                                          |
+| PATCH  | `/api/billing/admin/plans/:id`           | Admin       |       No        | Update a plan (not `code`)                                                                                  |
+| POST   | `/api/billing/admin/plans/:id/archive`   | Admin       |       No        | Archive a plan                                                                                              |
+| POST   | `/api/billing/admin/plans/:id/prices`    | Admin       |       No        | Attach a Stripe price to a plan                                                                             |
+| GET    | `/api/billing/admin/overview`            | Admin       |       No        | Operational snapshot                                                                                        |
+| GET    | `/api/billing/admin/webhooks/failed`     | Admin       |       No        | List up to 100 failed webhook events                                                                        |
+| POST   | `/api/billing/admin/webhooks/:id/replay` | Admin       |       No        | Replay a failed webhook event                                                                               |
+| POST   | `/api/billing/admin/payments/:id/refund` | Admin       |     **Yes**     | Refund — body `{ amount? }` (omit for full refund)                                                          |
+| POST   | `/api/billing/webhooks/stripe`           | Stripe-only |       No        | Server-to-server; not called by the browser                                                                 |
 
 ---
 

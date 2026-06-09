@@ -10,6 +10,7 @@ import {
   Query,
   ParseIntPipe,
   HttpStatus,
+  Logger,
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -23,6 +24,8 @@ import { Public } from 'src/auth/decorators/public.decorator';
 import { FilterOptionsDto } from './dto/filter-options.dto';
 import { PaginatedResult } from 'src/helpers/paginate.helper';
 import { GetUser } from 'src/auth/decorators/current-user.decorator';
+import { ListsService } from 'src/modules/lists/lists.service';
+import { MailService } from 'src/mail/mail.service';
 import {
   ApiTags,
   ApiOperation,
@@ -34,7 +37,13 @@ import {
 @ApiTags('Users')
 @Controller('user')
 export class UserController {
-  constructor(private readonly userService: UserService) {}
+  private readonly logger = new Logger(UserController.name);
+
+  constructor(
+    private readonly userService: UserService,
+    private readonly listsService: ListsService,
+    private readonly mailService: MailService,
+  ) {}
 
   @Public()
   @Post()
@@ -48,8 +57,21 @@ export class UserController {
     status: HttpStatus.BAD_REQUEST,
     description: 'User already exists or invalid input',
   })
-  create(@Body() createUserDto: CreateUserDto): Promise<User> {
-    return this.userService.create(createUserDto);
+  async create(@Body() createUserDto: CreateUserDto): Promise<User> {
+    const user = await this.userService.create(createUserDto);
+    await this.listsService.ensureSystemLists(user.id);
+
+    try {
+      const token = await this.mailService.sendVerificationEmail(user);
+      await this.userService.saveVerificationToken(user.id, token);
+    } catch (error) {
+      this.logger.error(
+        'Failed to send verification email after registration',
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
+
+    return user;
   }
 
   @Public()

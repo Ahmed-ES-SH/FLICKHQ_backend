@@ -23,7 +23,8 @@
     "migration:create": "npx typeorm migration:create db/migrations/$npm_config_name",
     "migration:run": "npm run typeorm -- migration:run",
     "migration:revert": "npm run typeorm -- migration:revert",
-    "seed:run": "ts-node -r tsconfig-paths/register src/database/seeds/seed-runner.ts"
+    "seed:run": "ts-node -r tsconfig-paths/register src/database/seeds/seed-runner.ts",
+    "seed:sync-stripe": "npx tsx src/database/seeds/sync-stripe-products.ts"
   },
   "dependencies": {
     "@nestjs-modules/mailer": "^2.3.4",
@@ -109,6 +110,9 @@
     ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node",
+    "moduleNameMapper": {
+      "^(\\.{1,2}/.*)\\.js$": "$1"
+    },
     "transformIgnorePatterns": [
       "<rootDir>/node_modules/(?!(uuid)/)"
     ]

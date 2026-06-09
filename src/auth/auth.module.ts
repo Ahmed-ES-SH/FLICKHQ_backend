@@ -12,8 +12,13 @@ import { GoogleStrategy } from './strategies/google.strategy';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { MailModule } from '../mail/mail.module';
 import { AuthGuard } from './guards/auth.guard';
+import { AuthCookieService } from './auth-cookie.service';
 import { BlackList } from './schema/blacklist-tokens.schema';
 import { AuthPublicController } from './auth.public.controller';
+import { ListsModule } from '../modules/lists/lists.module';
+import { BillingSubscription } from '../billing/entities/billing-subscription.entity';
+import { BillingPlan } from '../billing/entities/billing-plan.entity';
+import { BillingPrice } from '../billing/entities/billing-price.entity';
 
 // JWT Options
 function ReturnJWTOptions(config: ConfigService) {
@@ -37,16 +42,18 @@ const JWT_OPTIONS = {
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, BlackList]),
+    TypeOrmModule.forFeature([User, BlackList, BillingSubscription, BillingPlan, BillingPrice]),
     JwtModule.registerAsync(JWT_OPTIONS),
     MailModule,
     ConfigModule,
     UserModule,
     PassportModule,
+    ListsModule,
   ],
   controllers: [AuthController, AuthPublicController],
   providers: [
     AuthService,
+    AuthCookieService,
     GoogleStrategy,
     JwtStrategy,
     // Global guard — handles auth for all routes, respects @Public()

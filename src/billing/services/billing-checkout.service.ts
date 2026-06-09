@@ -99,11 +99,13 @@ export interface BillingCheckoutSubscriptionInput {
   trialDays?: number | null;
   allowPromotionCodes: boolean;
   idempotencyKey: string;
+  uiMode?: 'hosted_page' | 'embedded_page';
 }
 
 export interface BillingCheckoutSessionResult {
   sessionId: string;
   url: string;
+  clientSecret?: string;
 }
 
 @Injectable()
@@ -323,6 +325,8 @@ export class BillingCheckoutService {
       });
       subscription = await this.subscriptionRepository.save(subscription);
 
+      const isEmbedded = input.uiMode === 'embedded_page';
+
       const sessionParams: StripeCheckout.SessionCreateParams = {
         mode: 'subscription',
         customer: customer.stripeCustomerId,
@@ -332,8 +336,6 @@ export class BillingCheckoutService {
             quantity: input.quantity,
           },
         ],
-        success_url: this.appendSessionId(successUrl),
-        cancel_url: cancelUrl,
         client_reference_id: input.clientReferenceId ?? subscription.id,
         metadata: {
           localPaymentId: payment.id,
@@ -358,6 +360,14 @@ export class BillingCheckoutService {
         // API 2026-05-27.dahlia.
       };
 
+      if (isEmbedded) {
+        sessionParams.ui_mode = 'embedded_page';
+        sessionParams.return_url = this.appendSessionId(successUrl);
+      } else {
+        sessionParams.success_url = this.appendSessionId(successUrl);
+        sessionParams.cancel_url = cancelUrl;
+      }
+
       const session = await this.stripeService.safeCall(() =>
         this.stripeService.getClient().checkout.sessions.create(sessionParams),
       );
@@ -379,6 +389,9 @@ export class BillingCheckoutService {
       const result: BillingCheckoutSessionResult = {
         sessionId: session.id,
         url: session.url ?? '',
+        ...(isEmbedded && session.client_secret
+          ? { clientSecret: session.client_secret }
+          : {}),
       };
 
       await this.idempotency.recordSuccess(

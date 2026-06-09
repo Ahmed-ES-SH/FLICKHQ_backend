@@ -142,6 +142,20 @@ export class UserService {
     return this.userRepo.findOne({ where: { email } });
   }
 
+  async saveVerificationToken(
+    userId: number,
+    token: string,
+  ): Promise<void> {
+    const expiry = new Date();
+    expiry.setHours(expiry.getHours() + 1);
+
+    await this.userRepo.update(userId, {
+      emailVerificationToken: token,
+      emailVerificationTokenExpiry: expiry,
+      isEmailVerified: false,
+    });
+  }
+
   async verifyEmail(token: string): Promise<User> {
     const user = await this.userRepo.findOne({
       where: { emailVerificationToken: token },

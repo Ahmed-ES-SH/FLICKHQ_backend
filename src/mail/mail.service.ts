@@ -21,7 +21,7 @@ export class MailService {
     try {
       await this.mailerService.sendMail({
         to: user.email,
-        subject: 'Welcome to CYPHER — Please verify your email',
+        subject: 'Welcome to FLICKHQ — Please verify your email',
         template: 'email-verification',
         context: {
           name: user.name,
@@ -51,7 +51,7 @@ export class MailService {
     try {
       await this.mailerService.sendMail({
         to: user.email,
-        subject: 'CYPHER — Reset Your Password',
+        subject: 'FLICKHQ — Reset Your Password',
         template: 'password-reset',
         context: {
           name: user.name,

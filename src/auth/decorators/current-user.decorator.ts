@@ -2,7 +2,7 @@ import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 import { RequestWithUser } from '../types/request.interface';
 import { User } from '../../user/schema/user.entity';
 
-type UserKey = keyof Pick<User, 'id' | 'email' | 'role'>;
+type UserKey = keyof User;
 
 export const GetUser = createParamDecorator(
   (data: UserKey | undefined, ctx: ExecutionContext): User | User[UserKey] => {

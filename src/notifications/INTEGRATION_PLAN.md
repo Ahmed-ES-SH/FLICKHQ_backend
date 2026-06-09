@@ -2,7 +2,7 @@
 
 > **Module path:** `src/notifications`
 > **Base URL (global prefix):** `/api`
-> **Auth:** All routes are protected by the global `AuthGuard` — frontend must send the JWT via HttpOnly cookie named `sanad_auth_token` (or `AUTH_TOKEN` env override). Use `withCredentials: true` on every request. Admin routes additionally require `RolesGuard` + role `ADMIN`.
+> **Auth:** All routes are protected by the global `AuthGuard` — frontend must send the JWT via HttpOnly cookie named `flick_auth_token` (or `AUTH_TOKEN` env override). Use `withCredentials: true` on every request. Admin routes additionally require `RolesGuard` + role `ADMIN`.
 > **Realtime transport:** Pusher (private channels + auth endpoint).
 > **Content-Type:** `application/json` for all request bodies.
 
@@ -27,11 +27,11 @@
 
 ## 2. Auth Requirements (applies to every endpoint)
 
-| Header / Cookie         | Required | Notes                                                                                       |
-| ----------------------- | -------- | ------------------------------------------------------------------------------------------- |
-| Cookie `sanad_auth_token` | Yes      | HttpOnly JWT issued at login. Send automatically by browser when `withCredentials: true`. |
-| `Authorization: Bearer <jwt>` | Optional fallback | Global guard currently reads from cookie only — prefer cookie flow.                 |
-| `Content-Type`          | Yes (for POST/PATCH body) | `application/json`                                                              |
+| Header / Cookie               | Required                  | Notes                                                                                     |
+| ----------------------------- | ------------------------- | ----------------------------------------------------------------------------------------- |
+| Cookie `flick_auth_token`     | Yes                       | HttpOnly JWT issued at login. Send automatically by browser when `withCredentials: true`. |
+| `Authorization: Bearer <jwt>` | Optional fallback         | Global guard currently reads from cookie only — prefer cookie flow.                       |
+| `Content-Type`                | Yes (for POST/PATCH body) | `application/json`                                                                        |
 
 > CORS allows `credentials: true` and `origin = FRONTEND_URL`. Make sure axios/fetch is configured with `withCredentials: true`.
 
@@ -46,12 +46,13 @@ Auth: any authenticated user (operates on `req.user.id`)
 
 `GET /api/notifications`
 
-| Param   | In   | Type        | Required | Default | Constraints              | Description                                              |
-| ------- | ---- | ----------- | -------- | ------- | ------------------------ | -------------------------------------------------------- |
-| `cursor` | query | string (ISO 8601) | No       | —       | `IsDateString`           | Pass `meta.nextCursor` from the previous response. Omit for first page. |
-| `limit`  | query | integer     | No       | `20`    | `1 ≤ limit ≤ 50`         | Page size.                                               |
+| Param    | In    | Type              | Required | Default | Constraints      | Description                                                             |
+| -------- | ----- | ----------------- | -------- | ------- | ---------------- | ----------------------------------------------------------------------- |
+| `cursor` | query | string (ISO 8601) | No       | —       | `IsDateString`   | Pass `meta.nextCursor` from the previous response. Omit for first page. |
+| `limit`  | query | integer           | No       | `20`    | `1 ≤ limit ≤ 50` | Page size.                                                              |
 
 **200 OK – Response example**
+
 ```json
 {
   "data": [
@@ -77,6 +78,7 @@ Auth: any authenticated user (operates on `req.user.id`)
 ```
 
 **Empty / first page**
+
 ```json
 {
   "data": [],
@@ -85,6 +87,7 @@ Auth: any authenticated user (operates on `req.user.id`)
 ```
 
 **Possible errors**
+
 - `401 Unauthorized` – missing/expired cookie.
 
 ---
@@ -93,20 +96,24 @@ Auth: any authenticated user (operates on `req.user.id`)
 
 `GET /api/notifications/paginated`
 
-| Param  | In   | Type    | Required | Default | Constraints        |
-| ------ | ---- | ------- | -------- | ------- | ------------------ |
-| `page`  | query | integer | No       | `1`     | `≥ 1`              |
-| `limit` | query | integer | No       | `20`    | `1 ≤ limit ≤ 100`  |
+| Param   | In    | Type    | Required | Default | Constraints       |
+| ------- | ----- | ------- | -------- | ------- | ----------------- |
+| `page`  | query | integer | No       | `1`     | `≥ 1`             |
+| `limit` | query | integer | No       | `20`    | `1 ≤ limit ≤ 100` |
 
 **200 OK – Response example**
+
 ```json
 {
-  "data": [ /* same shape as 3.1 */ ],
+  "data": [
+    /* same shape as 3.1 */
+  ],
   "total": 142,
   "page": 1,
   "limit": 20
 }
 ```
+
 > The backend marks this as deprecated. Use cursor endpoint (3.1) for infinite scroll.
 
 ---
@@ -118,6 +125,7 @@ Auth: any authenticated user (operates on `req.user.id`)
 No params.
 
 **200 OK**
+
 ```json
 { "unreadCount": 7 }
 ```
@@ -130,13 +138,14 @@ No params.
 
 `PATCH /api/notifications/:id/read`
 
-| Param | In   | Type   | Required | Notes                |
-| ----- | ---- | ------ | -------- | -------------------- |
-| `id`  | path | UUID   | Yes      | `ParseUUIDPipe`      |
+| Param | In   | Type | Required | Notes           |
+| ----- | ---- | ---- | -------- | --------------- |
+| `id`  | path | UUID | Yes      | `ParseUUIDPipe` |
 
 No body.
 
 **200 OK – Response example**
+
 ```json
 {
   "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
@@ -153,6 +162,7 @@ No body.
 ```
 
 **Possible errors**
+
 - `400 BadRequest` – `id` is not a UUID.
 - `401 Unauthorized`.
 - `403 Forbidden` – notification belongs to another user.
@@ -169,6 +179,7 @@ No body.
 No params, no body.
 
 **200 OK**
+
 ```json
 { "success": true }
 ```
@@ -190,6 +201,7 @@ No body.
 **204 No Content** on success (empty body).
 
 **Possible errors**
+
 - `400 BadRequest` – invalid UUID.
 - `401 Unauthorized`.
 - `403 Forbidden` – not your notification.
@@ -206,6 +218,7 @@ No body.
 No params.
 
 **200 OK – Response example**
+
 ```json
 {
   "id": "0c4f...",
@@ -219,6 +232,7 @@ No params.
   "updatedAt": "2026-06-01T08:00:00.000Z"
 }
 ```
+
 > If no row exists, backend auto-creates defaults (all `true`) and returns them.
 
 ---
@@ -229,20 +243,22 @@ No params.
 
 All fields optional, partial update (any combination accepted). Body must be a JSON object.
 
-| Field                  | Type    | Required | Notes                                    |
-| ---------------------- | ------- | -------- | ---------------------------------------- |
-| `orderNotifications`   | boolean | No       | Receive order updates.                   |
-| `paymentNotifications` | boolean | No       | Receive payment updates.                 |
-| `systemNotifications`  | boolean | No       | Receive system / broadcast messages.     |
-| `emailEnabled`         | boolean | No       | Allow email delivery (future email jobs).|
-| `pushEnabled`          | boolean | No       | Allow realtime push via Pusher.          |
+| Field                  | Type    | Required | Notes                                     |
+| ---------------------- | ------- | -------- | ----------------------------------------- |
+| `orderNotifications`   | boolean | No       | Receive order updates.                    |
+| `paymentNotifications` | boolean | No       | Receive payment updates.                  |
+| `systemNotifications`  | boolean | No       | Receive system / broadcast messages.      |
+| `emailEnabled`         | boolean | No       | Allow email delivery (future email jobs). |
+| `pushEnabled`          | boolean | No       | Allow realtime push via Pusher.           |
 
 **Request example**
+
 ```json
 { "emailEnabled": false, "pushEnabled": true }
 ```
 
 **200 OK – Response example**
+
 ```json
 {
   "id": "0c4f...",
@@ -258,6 +274,7 @@ All fields optional, partial update (any combination accepted). Body must be a J
 ```
 
 **Possible errors**
+
 - `400 BadRequest` – any value not a boolean.
 
 ---
@@ -273,15 +290,16 @@ Auth: `JwtAuthGuard` (cookie) + `RolesGuard` + role `ADMIN`.
 
 **Request body (JSON)** – `CreateNotificationDto`
 
-| Field      | Type                        | Required | Notes                                                            |
-| ---------- | --------------------------- | -------- | ---------------------------------------------------------------- |
-| `userId`   | string (UUID)               | Yes      | Target user.                                                     |
-| `type`     | enum `NotificationType`     | Yes      | One of: `ORDER_UPDATED`, `PAYMENT_SUCCESS`, `PAYMENT_FAILED`, `SYSTEM`, `BROADCAST`. |
-| `title`    | string                      | Yes      | Non-empty.                                                       |
-| `message`  | string                      | Yes      | Non-empty.                                                       |
-| `data`     | object                      | No       | Free-form metadata. Serialized as JSONB.                        |
+| Field     | Type                    | Required | Notes                                                                                |
+| --------- | ----------------------- | -------- | ------------------------------------------------------------------------------------ |
+| `userId`  | string (UUID)           | Yes      | Target user.                                                                         |
+| `type`    | enum `NotificationType` | Yes      | One of: `ORDER_UPDATED`, `PAYMENT_SUCCESS`, `PAYMENT_FAILED`, `SYSTEM`, `BROADCAST`. |
+| `title`   | string                  | Yes      | Non-empty.                                                                           |
+| `message` | string                  | Yes      | Non-empty.                                                                           |
+| `data`    | object                  | No       | Free-form metadata. Serialized as JSONB.                                             |
 
 **Request example**
+
 ```json
 {
   "userId": "0c0a1f2e-3c4d-5e6f-7a8b-9c0d1e2f3a4b",
@@ -293,6 +311,7 @@ Auth: `JwtAuthGuard` (cookie) + `RolesGuard` + role `ADMIN`.
 ```
 
 **201 Created – Response example** (the created `Notification` row)
+
 ```json
 {
   "id": "1f0e9b6c-7c3a-4b6e-8f1b-0a9d8c7b6e5d",
@@ -309,6 +328,7 @@ Auth: `JwtAuthGuard` (cookie) + `RolesGuard` + role `ADMIN`.
 ```
 
 **Possible errors**
+
 - `400 BadRequest` – validation error (missing field, bad enum, etc.).
 - `401 Unauthorized`.
 - `403 Forbidden` – not admin.
@@ -321,14 +341,15 @@ Auth: `JwtAuthGuard` (cookie) + `RolesGuard` + role `ADMIN`.
 
 `POST /api/admin/notifications/broadcast`
 
-| Field           | Type      | Required | Notes                                                                                                  |
-| --------------- | --------- | -------- | ------------------------------------------------------------------------------------------------------ |
-| `title`         | string    | Yes      | Non-empty.                                                                                             |
-| `message`       | string    | Yes      | Non-empty.                                                                                             |
-| `targetUserIds` | string[]  | No       | If provided & non-empty → send only to these users (DB rows + per-user Pusher). If omitted/empty → emit system-wide event (`notification.order.updated`); no per-user DB rows are created. |
-| `data`          | object    | No       | Free-form metadata.                                                                                    |
+| Field           | Type     | Required | Notes                                                                                                                                                                                      |
+| --------------- | -------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `title`         | string   | Yes      | Non-empty.                                                                                                                                                                                 |
+| `message`       | string   | Yes      | Non-empty.                                                                                                                                                                                 |
+| `targetUserIds` | string[] | No       | If provided & non-empty → send only to these users (DB rows + per-user Pusher). If omitted/empty → emit system-wide event (`notification.order.updated`); no per-user DB rows are created. |
+| `data`          | object   | No       | Free-form metadata.                                                                                                                                                                        |
 
 **Request example (targeted)**
+
 ```json
 {
   "title": "Beta access",
@@ -342,21 +363,25 @@ Auth: `JwtAuthGuard` (cookie) + `RolesGuard` + role `ADMIN`.
 ```
 
 **Request example (system-wide)**
+
 ```json
 { "title": "Heads up", "message": "New feature released." }
 ```
 
 **200 OK – Response example**
+
 ```json
 { "success": true }
 ```
 
 **Possible errors**
+
 - `400 BadRequest` – title/message empty.
 - `401 Unauthorized`.
 - `403 Forbidden` – not admin.
 
 **Side effects (realtime)**
+
 - Targeted: one `notification:new` per user on `private-user-{userId}` + DB row per user (type = `BROADCAST`).
 - System-wide: emits internal event `notification.order.updated` (no Pusher fanout in this module — consumer modules may translate it).
 
@@ -366,15 +391,18 @@ Auth: `JwtAuthGuard` (cookie) + `RolesGuard` + role `ADMIN`.
 
 `GET /api/admin/notifications`
 
-| Param   | In   | Type    | Required | Default | Constraints        |
-| ------- | ---- | ------- | -------- | ------- | ------------------ |
-| `page`  | query | integer | No       | `1`     | `≥ 1`              |
-| `limit` | query | integer | No       | `20`    | `1 ≤ limit ≤ 100`  |
+| Param   | In    | Type    | Required | Default | Constraints       |
+| ------- | ----- | ------- | -------- | ------- | ----------------- |
+| `page`  | query | integer | No       | `1`     | `≥ 1`             |
+| `limit` | query | integer | No       | `20`    | `1 ≤ limit ≤ 100` |
 
 **200 OK – Response example**
+
 ```json
 {
-  "data": [ /* Notification objects, see 3.1 shape */ ],
+  "data": [
+    /* Notification objects, see 3.1 shape */
+  ],
   "total": 1024,
   "page": 1,
   "limit": 20
@@ -396,6 +424,7 @@ No body.
 **204 No Content** on success (empty body).
 
 **Possible errors**
+
 - `400 BadRequest` – invalid UUID.
 - `401 Unauthorized`.
 - `403 Forbidden` – not admin.
@@ -411,21 +440,21 @@ No body.
 
 The frontend needs to read these from a public env file or `/api` health endpoint exposed by backend:
 
-| Key                | Source / Example                       |
-| ------------------ | -------------------------------------- |
-| `PUSHER_KEY`       | Public Pusher app key                  |
-| `PUSHER_CLUSTER`   | e.g. `eu`, `us2`, `ap3`                |
-| `PUSHER_AUTH_URL`  | `https://api.example.com/api/pusher/auth` |
-| Current `userId`   | From logged-in user (JWT `id`)         |
+| Key               | Source / Example                          |
+| ----------------- | ----------------------------------------- |
+| `PUSHER_KEY`      | Public Pusher app key                     |
+| `PUSHER_CLUSTER`  | e.g. `eu`, `us2`, `ap3`                   |
+| `PUSHER_AUTH_URL` | `https://api.example.com/api/pusher/auth` |
+| Current `userId`  | From logged-in user (JWT `id`)            |
 
 > `PUSHER_SECRET` is **never** exposed.
 
 ### 5.2 Channels
 
-| Channel                     | Who subscribes           | Purpose                                         |
-| --------------------------- | ------------------------ | ----------------------------------------------- |
-| `private-user-{userId}`     | The user with that `id`  | Personal notifications + read/count/delete deltas + payment status. |
-| `broadcast`                 | Anyone (public channel)  | System-wide broadcasts (no auth required).      |
+| Channel                 | Who subscribes          | Purpose                                                             |
+| ----------------------- | ----------------------- | ------------------------------------------------------------------- |
+| `private-user-{userId}` | The user with that `id` | Personal notifications + read/count/delete deltas + payment status. |
+| `broadcast`             | Anyone (public channel) | System-wide broadcasts (no auth required).                          |
 
 > Frontend **must** subscribe **only** to `private-user-{currentUserId}`. The backend will reject auth for any other user id.
 
@@ -437,7 +466,7 @@ import Pusher from 'pusher-js';
 const pusher = new Pusher(import.meta.env.VITE_PUSHER_KEY, {
   cluster: import.meta.env.VITE_PUSHER_CLUSTER,
   authEndpoint: `${import.meta.env.VITE_API_URL}/api/pusher/auth`,
-  auth: { headers: {} },        // cookie sent automatically
+  auth: { headers: {} }, // cookie sent automatically
   forceTLS: true,
   withCredentials: true,
 });
@@ -450,16 +479,22 @@ const channel = pusher.subscribe(`private-user-${currentUserId}`);
 Triggered automatically by pusher-js on `private-*` subscription.
 
 **Request body** (sent by pusher-js)
+
 ```json
-{ "socket_id": "1234.5678", "channel_name": "private-user-0c0a1f2e-3c4d-5e6f-7a8b-9c0d1e2f3a4b" }
+{
+  "socket_id": "1234.5678",
+  "channel_name": "private-user-0c0a1f2e-3c4d-5e6f-7a8b-9c0d1e2f3a4b"
+}
 ```
 
 **200 OK – Response example** (Pusher's standard shape)
+
 ```json
 { "auth": "APP_KEY:HMAC_SIGNATURE" }
 ```
 
 **Possible errors**
+
 - `400 BadRequest` – missing `channel_name` / `socket_id`.
 - `401 Unauthorized` – missing/expired cookie.
 - `403 Forbidden` – `channel_name` user id ≠ authenticated user id (anti-snooping).
@@ -469,7 +504,9 @@ Triggered automatically by pusher-js on `private-*` subscription.
 All payloads include `eventId` (uuid), `userId`, and ISO `timestamp`.
 
 #### `notification:new` – on `private-user-{userId}`
+
 Emitted when a notification is created for this user.
+
 ```json
 {
   "eventId": "f3c1...",
@@ -484,7 +521,9 @@ Emitted when a notification is created for this user.
 ```
 
 #### `notification:read` – on `private-user-{userId}`
+
 Emitted after `PATCH /:id/read`.
+
 ```json
 {
   "eventId": "a7c1...",
@@ -495,7 +534,9 @@ Emitted after `PATCH /:id/read`.
 ```
 
 #### `notification:read_all` – on `private-user-{userId}`
+
 Emitted after `PATCH /read-all`.
+
 ```json
 {
   "eventId": "b8d2...",
@@ -505,7 +546,9 @@ Emitted after `PATCH /read-all`.
 ```
 
 #### `notification:count` – on `private-user-{userId}`
+
 Emitted after any state change affecting unread count (mark read, mark all, delete, new).
+
 ```json
 {
   "eventId": "c9e3...",
@@ -516,7 +559,9 @@ Emitted after any state change affecting unread count (mark read, mark all, dele
 ```
 
 #### `notification:delete` – on `private-user-{userId}`
+
 Emitted after `DELETE /:id`.
+
 ```json
 {
   "eventId": "d0f4...",
@@ -527,19 +572,23 @@ Emitted after `DELETE /:id`.
 ```
 
 #### `payment:status` – on `private-user-{userId}`
+
 Emitted by the billing module on Stripe webhook outcomes.
+
 ```json
 {
   "eventId": "e1a5...",
-  "status": "succeeded",          // "succeeded" | "failed" | "refunded"
-  "amount": 1999,                 // minor units
+  "status": "succeeded", // "succeeded" | "failed" | "refunded"
+  "amount": 1999, // minor units
   "description": "Pro plan monthly",
   "timestamp": "2026-06-07T10:45:00.000Z"
 }
 ```
 
 #### `notification:new` on `broadcast` channel (public)
+
 System-wide broadcast payload. No `userId` is present.
+
 ```json
 {
   "eventId": "f2b6...",
@@ -578,34 +627,34 @@ broadcast.bind('notification:new', (p) => /* global banner */);
 
 ### 6.1 `Notification` (TypeORM entity → `notifications` table)
 
-| Column      | Type                                       | Notes                                  |
-| ----------- | ------------------------------------------ | -------------------------------------- |
-| `id`        | UUID PK                                    |                                        |
-| `userId`    | UUID indexed                               |                                        |
-| `type`      | enum `NotificationType`                    | `ORDER_UPDATED`, `PAYMENT_SUCCESS`, `PAYMENT_FAILED`, `SYSTEM`, `BROADCAST` |
-| `title`     | varchar(255)                               |                                        |
-| `message`   | text                                       |                                        |
-| `data`      | jsonb, nullable                            | Free-form per type.                    |
-| `isRead`    | boolean, default `false`                   | DB column `is_read`.                   |
-| `readAt`    | timestamp, nullable                        | DB column `read_at`.                   |
-| `isDeleted` | boolean, default `false`                   | Used for **soft** delete (client).     |
-| `createdAt` | timestamp                                  | DB column `created_at`.                |
-| `updatedAt` | timestamp                                  | DB column `updated_at`.                |
+| Column      | Type                     | Notes                                                                       |
+| ----------- | ------------------------ | --------------------------------------------------------------------------- |
+| `id`        | UUID PK                  |                                                                             |
+| `userId`    | UUID indexed             |                                                                             |
+| `type`      | enum `NotificationType`  | `ORDER_UPDATED`, `PAYMENT_SUCCESS`, `PAYMENT_FAILED`, `SYSTEM`, `BROADCAST` |
+| `title`     | varchar(255)             |                                                                             |
+| `message`   | text                     |                                                                             |
+| `data`      | jsonb, nullable          | Free-form per type.                                                         |
+| `isRead`    | boolean, default `false` | DB column `is_read`.                                                        |
+| `readAt`    | timestamp, nullable      | DB column `read_at`.                                                        |
+| `isDeleted` | boolean, default `false` | Used for **soft** delete (client).                                          |
+| `createdAt` | timestamp                | DB column `created_at`.                                                     |
+| `updatedAt` | timestamp                | DB column `updated_at`.                                                     |
 
 > ⚠️ The notification object returned by REST **does not** include `isDeleted` — soft-deleted rows are simply filtered out.
 
 ### 6.2 `NotificationPreferences` (TypeORM entity → `notification_preferences` table)
 
-| Column                | Type    | Default | Notes                       |
-| --------------------- | ------- | ------- | --------------------------- |
-| `id`                  | UUID PK |         |                             |
-| `userId`              | UUID, unique |   | One row per user.           |
-| `orderNotifications`  | boolean | `true`  | DB column `order_notifications`  |
-| `paymentNotifications`| boolean | `true`  | DB column `payment_notifications`|
-| `systemNotifications` | boolean | `true`  | DB column `system_notifications` |
-| `emailEnabled`        | boolean | `true`  | DB column `email_enabled`        |
-| `pushEnabled`         | boolean | `true`  | DB column `push_enabled`         |
-| `createdAt` / `updatedAt` | timestamp |   |                             |
+| Column                    | Type         | Default | Notes                             |
+| ------------------------- | ------------ | ------- | --------------------------------- |
+| `id`                      | UUID PK      |         |                                   |
+| `userId`                  | UUID, unique |         | One row per user.                 |
+| `orderNotifications`      | boolean      | `true`  | DB column `order_notifications`   |
+| `paymentNotifications`    | boolean      | `true`  | DB column `payment_notifications` |
+| `systemNotifications`     | boolean      | `true`  | DB column `system_notifications`  |
+| `emailEnabled`            | boolean      | `true`  | DB column `email_enabled`         |
+| `pushEnabled`             | boolean      | `true`  | DB column `push_enabled`          |
+| `createdAt` / `updatedAt` | timestamp    |         |                                   |
 
 ---
 
@@ -628,9 +677,9 @@ export interface Notification {
   message: string;
   data: Record<string, unknown> | null;
   isRead: boolean;
-  readAt: string | null;   // ISO
-  createdAt: string;       // ISO
-  updatedAt: string;       // ISO
+  readAt: string | null; // ISO
+  createdAt: string; // ISO
+  updatedAt: string; // ISO
 }
 
 export interface CursorPaginated<T> {
@@ -724,7 +773,7 @@ export type PaymentStatus = 'succeeded' | 'failed' | 'refunded';
 export interface PusherPaymentStatus {
   eventId: string;
   status: PaymentStatus;
-  amount: number;        // minor units
+  amount: number; // minor units
   description: string;
   timestamp: string;
 }
@@ -763,28 +812,28 @@ export interface PusherPaymentStatus {
 
 ## 9. Full Endpoint Cheat-Sheet
 
-| Method | Path                                          | Auth          | Body / Query                          | Success        |
-| ------ | --------------------------------------------- | ------------- | ------------------------------------- | -------------- |
-| GET    | `/api/notifications`                          | User          | `cursor?`, `limit?`                   | 200 cursor     |
-| GET    | `/api/notifications/paginated`                | User (legacy) | `page?`, `limit?`                     | 200 offset     |
-| GET    | `/api/notifications/unread-count`             | User          | —                                     | 200 `{unreadCount}` |
-| PATCH  | `/api/notifications/:id/read`                 | User          | —                                     | 200 Notification |
-| PATCH  | `/api/notifications/read-all`                 | User          | —                                     | 200 `{success:true}` |
-| DELETE | `/api/notifications/:id`                      | User          | —                                     | 204            |
-| GET    | `/api/notifications/preferences`              | User          | —                                     | 200 Preferences |
-| PATCH  | `/api/notifications/preferences`              | User          | partial prefs object                  | 200 Preferences |
-| POST   | `/api/admin/notifications/send`               | Admin         | `CreateNotificationPayload`           | 201 Notification |
-| POST   | `/api/admin/notifications/broadcast`          | Admin         | `BroadcastNotificationPayload`        | 200 `{success:true}` |
-| GET    | `/api/admin/notifications`                    | Admin         | `page?`, `limit?`                     | 200 offset     |
-| DELETE | `/api/admin/notifications/:id`                | Admin         | —                                     | 204            |
-| POST   | `/api/pusher/auth`                            | User          | `{socket_id, channel_name}`           | 200 pusher auth |
+| Method | Path                                 | Auth          | Body / Query                   | Success              |
+| ------ | ------------------------------------ | ------------- | ------------------------------ | -------------------- |
+| GET    | `/api/notifications`                 | User          | `cursor?`, `limit?`            | 200 cursor           |
+| GET    | `/api/notifications/paginated`       | User (legacy) | `page?`, `limit?`              | 200 offset           |
+| GET    | `/api/notifications/unread-count`    | User          | —                              | 200 `{unreadCount}`  |
+| PATCH  | `/api/notifications/:id/read`        | User          | —                              | 200 Notification     |
+| PATCH  | `/api/notifications/read-all`        | User          | —                              | 200 `{success:true}` |
+| DELETE | `/api/notifications/:id`             | User          | —                              | 204                  |
+| GET    | `/api/notifications/preferences`     | User          | —                              | 200 Preferences      |
+| PATCH  | `/api/notifications/preferences`     | User          | partial prefs object           | 200 Preferences      |
+| POST   | `/api/admin/notifications/send`      | Admin         | `CreateNotificationPayload`    | 201 Notification     |
+| POST   | `/api/admin/notifications/broadcast` | Admin         | `BroadcastNotificationPayload` | 200 `{success:true}` |
+| GET    | `/api/admin/notifications`           | Admin         | `page?`, `limit?`              | 200 offset           |
+| DELETE | `/api/admin/notifications/:id`       | Admin         | —                              | 204                  |
+| POST   | `/api/pusher/auth`                   | User          | `{socket_id, channel_name}`    | 200 pusher auth      |
 
 ---
 
 ## 10. Implementation Checklist for the Frontend
 
 - [ ] Configure HTTP client (`axios` / `fetch`) with `baseURL = <backend>` and `withCredentials = true`.
-- [ ] On login, ensure `sanad_auth_token` cookie is set (HttpOnly, set by backend on auth).
+- [ ] On login, ensure `flick_auth_token` cookie is set (HttpOnly, set by backend on auth).
 - [ ] Read public Pusher config (`PUSHER_KEY`, `PUSHER_CLUSTER`, `auth URL`) from frontend env.
 - [ ] Initialize a single Pusher instance per app load; subscribe to `private-user-{me.id}` **after** auth.
 - [ ] Build a `useNotifications` (or equivalent) hook that:
@@ -812,17 +861,17 @@ export interface PusherPaymentStatus {
 
 ## 11. Source Map (for backend reference)
 
-| Concern                         | File                                                    |
-| ------------------------------- | ------------------------------------------------------- |
-| Bootstrap, global prefix `/api` | `src/main.ts`                                           |
-| Module wiring                   | `src/notifications/notifications.module.ts`             |
-| Client REST                     | `src/notifications/notifications.client.controller.ts`  |
-| Admin REST                      | `src/notifications/notifications.controller.ts`         |
-| Business logic                  | `src/notifications/notifications.service.ts`            |
-| DTOs (validation)               | `src/notifications/dto/*.dto.ts`                        |
-| Entities                        | `src/notifications/schema/*.schema.ts`                  |
-| Enums                           | `src/notifications/enums/notification-type.enum.ts`     |
-| Internal event names            | `src/notifications/events/notification.events.ts`       |
-| Pusher integration              | `src/notifications/pusher.service.ts`                   |
-| Pusher auth REST                | `src/notifications/pusher.auth.controller.ts`           |
-| Pusher client factory           | `src/config/pusher.config.ts`                           |
+| Concern                         | File                                                   |
+| ------------------------------- | ------------------------------------------------------ |
+| Bootstrap, global prefix `/api` | `src/main.ts`                                          |
+| Module wiring                   | `src/notifications/notifications.module.ts`            |
+| Client REST                     | `src/notifications/notifications.client.controller.ts` |
+| Admin REST                      | `src/notifications/notifications.controller.ts`        |
+| Business logic                  | `src/notifications/notifications.service.ts`           |
+| DTOs (validation)               | `src/notifications/dto/*.dto.ts`                       |
+| Entities                        | `src/notifications/schema/*.schema.ts`                 |
+| Enums                           | `src/notifications/enums/notification-type.enum.ts`    |
+| Internal event names            | `src/notifications/events/notification.events.ts`      |
+| Pusher integration              | `src/notifications/pusher.service.ts`                  |
+| Pusher auth REST                | `src/notifications/pusher.auth.controller.ts`          |
+| Pusher client factory           | `src/config/pusher.config.ts`                          |

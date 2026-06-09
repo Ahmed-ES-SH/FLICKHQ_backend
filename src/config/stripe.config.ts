@@ -1,5 +1,5 @@
 /**
- * Stripe Configuration for CYPHER Backend
+ * Stripe Configuration for FLICKHQ Backend
  *
  * Configures the Stripe SDK with:
  * - Explicit, pinned API version (2026-05-27.dahlia)
@@ -205,7 +205,7 @@ export const StripeProvider = {
       // configured API version on the wire.
       apiVersion: apiVersion as never,
       appInfo: {
-        name: 'cypher-backend-billing',
+        name: 'FLICKHQ-backend-billing',
         version: '1.0.0',
       },
     });

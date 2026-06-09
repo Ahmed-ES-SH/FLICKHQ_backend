@@ -21,8 +21,11 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { VerifyResetTokenDto } from './dto/verify-reset-password-token.dto';
 import { SendResetPasswordDto } from './dto/send-reset-password.dto';
 import { BlackList } from './schema/blacklist-tokens.schema';
-import { LogoutDto } from './dto/logout.dto';
 import { UserRoleEnum } from './types/UserRoleEnum';
+import { ListsService } from '../modules/lists/lists.service';
+import { BillingSubscription } from '../billing/entities/billing-subscription.entity';
+import { BillingPlan } from '../billing/entities/billing-plan.entity';
+import { BillingSubscriptionStatus } from '../billing/common/billing.enums';
 
 // JWT expiry in hours — used to set blacklist token TTL
 const JWT_EXPIRY_HOURS = 24;
@@ -36,10 +39,15 @@ export class AuthService {
     private readonly userService: UserService,
     private readonly mailService: MailService,
     private readonly jwtService: JwtService,
+    private readonly listsService: ListsService,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
     @InjectRepository(BlackList)
     private readonly blackListRepo: Repository<BlackList>,
+    @InjectRepository(BillingSubscription)
+    private readonly billingSubscriptionRepo: Repository<BillingSubscription>,
+    @InjectRepository(BillingPlan)
+    private readonly billingPlanRepo: Repository<BillingPlan>,
   ) {}
 
   // MARK: Authentication — login / logout
@@ -72,9 +80,7 @@ export class AuthService {
     return { user: userWithoutPassword, access_token: token };
   }
 
-  async logout(dto: LogoutDto, userId: string): Promise<{ message: string }> {
-    const { token } = dto;
-
+  async logout(token: string, userId: string): Promise<{ message: string }> {
     // Set expiry so the blacklist table doesn't grow unbounded
     const expiresAt = new Date();
     expiresAt.setHours(
@@ -252,12 +258,93 @@ export class AuthService {
           role: UserRoleEnum.USER,
         });
       }
+
+      await this.listsService.ensureSystemLists(user.id);
     }
 
     const payload = { id: user.id, email: user.email, role: user.role };
     const access_token = this.jwtService.sign(payload);
 
     return { access_token, user };
+  }
+
+  // MARK: Current user with plan
+
+  async getCurrentUserWithPlan(
+    userId: number,
+  ): Promise<{
+    user: Omit<User, 'password'>;
+    subscription: {
+      plan: Partial<BillingPlan> & { code: string; name: string };
+      status: string;
+      periodStart?: Date | null;
+      periodEnd?: Date | null;
+      trialEnd?: Date | null;
+      cancelAtPeriodEnd?: boolean;
+      canceledAt?: Date | null;
+    };
+  }> {
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+
+    if (!user) throw new BadRequestException('User not found');
+
+    const activeSubscription = await this.billingSubscriptionRepo.findOne({
+      where: [
+        { userId, status: BillingSubscriptionStatus.ACTIVE },
+        { userId, status: BillingSubscriptionStatus.TRIALING },
+        { userId, status: BillingSubscriptionStatus.PAST_DUE },
+      ],
+      relations: ['plan', 'price'],
+      order: { createdAt: 'DESC' },
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { password, ...userWithoutPassword } = user;
+
+    if (activeSubscription?.plan) {
+      return {
+        user: userWithoutPassword,
+        subscription: {
+          plan: {
+            id: activeSubscription.plan.id,
+            code: activeSubscription.plan.code,
+            name: activeSubscription.plan.name,
+            description: activeSubscription.plan.description,
+            features: activeSubscription.plan.features,
+            icon: activeSubscription.plan.icon,
+            highlight: activeSubscription.plan.highlight,
+          },
+          status: activeSubscription.status,
+          periodStart: activeSubscription.currentPeriodStart,
+          periodEnd: activeSubscription.currentPeriodEnd,
+          trialEnd: activeSubscription.trialEnd,
+          cancelAtPeriodEnd: activeSubscription.cancelAtPeriodEnd,
+          canceledAt: activeSubscription.canceledAt,
+        },
+      };
+    }
+
+    const freePlan = await this.billingPlanRepo.findOne({
+      where: { code: 'free' },
+    });
+
+    return {
+      user: userWithoutPassword,
+      subscription: {
+        plan: freePlan
+          ? {
+              id: freePlan.id,
+              code: freePlan.code,
+              name: freePlan.name,
+              description: freePlan.description,
+              features: freePlan.features,
+              icon: freePlan.icon,
+              highlight: freePlan.highlight,
+            }
+          : { code: 'free', name: 'Free' },
+        status: 'free',
+      },
+    };
   }
 
   // MARK: Private helpers

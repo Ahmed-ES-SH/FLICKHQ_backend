@@ -33,6 +33,9 @@ const samplePlan = (overrides: Partial<BillingPlan> = {}): BillingPlan => ({
   description: null,
   status: BillingPlanStatus.ACTIVE,
   features: ['premium_reports'],
+  displayOrder: 0,
+  icon: null,
+  highlight: false,
   metadata: {},
   createdAt: new Date('2024-01-01T00:00:00Z'),
   updatedAt: new Date('2024-01-01T00:00:00Z'),
@@ -235,7 +238,7 @@ describe('BillingCatalogService', () => {
       priceRepo.find.mockResolvedValueOnce([samplePrice()]);
       const result = await service.listAllPlans();
       expect(result).toHaveLength(1);
-      expect(result[0].prices).toHaveLength(1);
+      expect(result[0]!.prices).toHaveLength(1);
     });
   });
 
@@ -259,7 +262,7 @@ describe('BillingCatalogService', () => {
       ]);
       const result = await service.listPublicPlans({});
       expect(result).toHaveLength(1);
-      expect(result[0].prices).toHaveLength(1);
+      expect(result[0]!.prices).toHaveLength(1);
     });
 
     it('filters by currency when requested', async () => {
@@ -273,8 +276,8 @@ describe('BillingCatalogService', () => {
         }),
       ]);
       const result = await service.listPublicPlans({ currency: 'EUR' });
-      expect(result[0].prices).toHaveLength(1);
-      expect(result[0].prices[0].currency).toBe('eur');
+      expect(result[0]!.prices).toHaveLength(1);
+      expect(result[0]!.prices[0]!.currency).toBe('eur');
     });
   });
 });

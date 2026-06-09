@@ -164,21 +164,21 @@ describe('BillingStripeService', () => {
         raw: { requestId: 'req_1', secret: 'whsec_secretex' },
       });
       const op = jest.fn().mockRejectedValue(sdkError);
-      const caught = await service
+      const caught = (await service
         .safeCall(op)
-        .catch((e: unknown) => e as Error);
+        .catch((e: unknown) => e as Error)) as Error;
       expect(caught).toBeDefined();
       expect(caught.message).toBe('Failed');
-      const raw = (caught as { raw: unknown }).raw;
+      const raw = (caught as unknown as { raw: unknown }).raw;
       expect(JSON.stringify(raw)).not.toContain('whsec_secretex');
       expect(JSON.stringify(raw)).toContain('whsec_[REDACTED]');
     });
 
     it('handles non-Error throws by rewrapping as an Error with redacted content', async () => {
       const op = jest.fn().mockRejectedValue('string sk_test_a');
-      const caught = await service
+      const caught = (await service
         .safeCall(op)
-        .catch((e: unknown) => e as Error);
+        .catch((e: unknown) => e as Error)) as Error;
       expect(caught).toBeInstanceOf(Error);
       expect(caught.message).toContain('sk_test_[REDACTED]');
     });

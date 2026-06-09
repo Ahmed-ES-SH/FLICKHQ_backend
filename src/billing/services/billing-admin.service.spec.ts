@@ -216,9 +216,9 @@ describe('BillingAdminService', () => {
 
       expect(result.total).toBe(2);
       expect(result.data).toHaveLength(2);
-      expect(result.data[0].stripeEventId).toBe('evt_1');
-      expect(result.data[0].errorMessage).toBe('something went wrong');
-      expect(result.data[1].stripeEventId).toBe('evt_2');
+      expect(result.data[0]!.stripeEventId).toBe('evt_1');
+      expect(result.data[0]!.errorMessage).toBe('something went wrong');
+      expect(result.data[1]!.stripeEventId).toBe('evt_2');
     });
 
     it('respects the limit parameter (max 500)', async () => {

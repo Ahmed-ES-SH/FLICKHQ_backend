@@ -9,8 +9,8 @@
     style="
       margin: 0;
       padding: 0;
-      background-color: #f4f4f7;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #000000;
+      font-family: 'Outfit', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     "
   >
     <table
@@ -18,7 +18,7 @@
       width="100%"
       cellspacing="0"
       cellpadding="0"
-      style="background-color: #f4f4f7; padding: 40px 0"
+      style="background-color: #000000; padding: 40px 0"
     >
       <tr>
         <td align="center">
@@ -28,19 +28,20 @@
             cellspacing="0"
             cellpadding="0"
             style="
-              background-color: #ffffff;
-              border-radius: 12px;
+              background-color: #0b0b0b;
+              border-radius: 8px;
               overflow: hidden;
-              box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+              border: 1px solid rgba(255, 255, 255, 0.05);
             "
           >
             <!-- Header -->
             <tr>
               <td
                 style="
-                  background: #00b8db;
+                  background-color: #0b0b0b;
                   padding: 40px 40px 30px;
                   text-align: center;
+                  border-bottom: 1px solid rgba(229, 9, 20, 0.3);
                 "
               >
                 <h1
@@ -52,13 +53,14 @@
                     letter-spacing: -0.5px;
                   "
                 >
-                  Welcome to CYPHER
+                  Welcome to FLICKHQ
                 </h1>
                 <p
                   style="
                     margin: 8px 0 0;
-                    color: rgba(255, 255, 255, 0.85);
+                    color: #94a3b8;
                     font-size: 14px;
+                    font-weight: 300;
                   "
                 >
                   Verify your email to get started
@@ -72,7 +74,7 @@
                 <p
                   style="
                     margin: 0 0 16px;
-                    color: #1a1a2e;
+                    color: #ffffff;
                     font-size: 18px;
                     font-weight: 600;
                   "
@@ -82,14 +84,15 @@
                 <p
                   style="
                     margin: 0 0 24px;
-                    color: #4a4a68;
+                    color: #94a3b8;
                     font-size: 15px;
                     line-height: 1.6;
+                    font-weight: 300;
                   "
                 >
                   Thank you for creating an account. Please verify your email
-          address by clicking the button below. This link will expire in
-          <strong>1 hour</strong>.
+                  address by clicking the button below. This link will expire in
+                  <strong style="color: #ffffff; font-weight: 600;">1 hour</strong>.
                 </p>
 
                 <!-- CTA Button -->
@@ -106,14 +109,13 @@
                         target="_blank"
                         style="
                           display: inline-block;
-                          background: #00b8db;
+                          background-color: #E50914;
                           color: #ffffff;
                           text-decoration: none;
-                          padding: 14px 40px;
-                          border-radius: 8px;
+                          padding: 14px 28px;
+                          border-radius: 4px;
                           font-size: 16px;
                           font-weight: 600;
-                          letter-spacing: 0.3px;
                         "
                       >
                         Verify My Email
@@ -125,9 +127,10 @@
                 <p
                   style="
                     margin: 0 0 12px;
-                    color: #4a4a68;
+                    color: #7d8185;
                     font-size: 13px;
                     line-height: 1.6;
+                    font-weight: 300;
                   "
                 >
                   If the button doesn't work, copy and paste this link into your
@@ -137,8 +140,9 @@
                   style="
                     margin: 0 0 24px;
                     word-break: break-all;
-                    color: #6366f1;
+                    color: #E50914;
                     font-size: 13px;
+                    font-weight: 500;
                   "
                 >
                   <%= verificationUrl %>
@@ -147,7 +151,7 @@
                 <hr
                   style="
                     border: none;
-                    border-top: 1px solid #e8e8ef;
+                    border-top: 1px solid rgba(255, 255, 255, 0.05);
                     margin: 24px 0;
                   "
                 />
@@ -155,9 +159,10 @@
                 <p
                   style="
                     margin: 0;
-                    color: #9a9ab0;
+                    color: #7d8185;
                     font-size: 12px;
                     line-height: 1.5;
+                    font-weight: 300;
                   "
                 >
                   If you didn't create an account, you can safely ignore this
@@ -170,15 +175,13 @@
             <tr>
               <td
                 style="
-                  background-color: #fafafc;
                   padding: 24px 40px;
                   text-align: center;
-                  border-top: 1px solid #e8e8ef;
+                  border-top: 1px solid rgba(255, 255, 255, 0.05);
                 "
               >
-                <p style="margin: 0; color: #9a9ab0; font-size: 12px">
-                  &copy; <%= year %> CYPHER. All rights
-                  reserved.
+                <p style="margin: 0; color: #7d8185; font-size: 12px; font-weight: 300;">
+                  &copy; <%= year %> FLICKHQ. All rights reserved.
                 </p>
               </td>
             </tr>

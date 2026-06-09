@@ -1,5 +1,5 @@
 /**
- * Database Configuration for CYPHER Backend
+ * Database Configuration for FLICKHQ Backend
  *
  * This file configures the PostgreSQL connection using TypeORM.
  * All configuration is loaded from environment variables.
@@ -15,8 +15,7 @@ import { DataSourceOptions, DataSource } from 'typeorm';
 import { config } from 'dotenv';
 import { BlackList } from '../auth/schema/blacklist-tokens.schema';
 import { ContactMessage } from '../contact/schema/contact-message.schema';
-import { Article } from '../blog/schema/article.schema';
-import { Category } from '../categories/schema/category.schema';
+
 import { Notification } from '../notifications/schema/notification.schema';
 import { NotificationPreferences } from '../notifications/schema/notification-preferences.schema';
 import { BillingCustomer } from '../billing/entities/billing-customer.entity';
@@ -29,6 +28,9 @@ import { BillingTransaction } from '../billing/entities/billing-transaction.enti
 import { BillingWebhookEvent } from '../billing/entities/billing-webhook-event.entity';
 import { BillingIdempotencyKey } from '../billing/entities/billing-idempotency-key.entity';
 import { BillingEntitlement } from '../billing/entities/billing-entitlement.entity';
+import { UserList } from '../modules/lists/schema/user-list.entity';
+import { UserListItem } from '../modules/lists/schema/user-list-item.entity';
+import { PlanSubscriptionHistory } from '../plans-subscriptions/entities/plan-subscription-history.entity';
 
 // Load environment variables from .env file
 config({ path: '.env' });
@@ -62,8 +64,6 @@ export const databaseConfig: DataSourceOptions = {
     User,
     BlackList,
     ContactMessage,
-    Article,
-    Category,
     Notification,
     NotificationPreferences,
     BillingCustomer,
@@ -76,6 +76,9 @@ export const databaseConfig: DataSourceOptions = {
     BillingWebhookEvent,
     BillingIdempotencyKey,
     BillingEntitlement,
+    UserList,
+    UserListItem,
+    PlanSubscriptionHistory,
   ],
 
   // ⚠️ IMPORTANT: Always false in production!

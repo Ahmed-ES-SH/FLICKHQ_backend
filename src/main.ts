@@ -80,10 +80,10 @@ async function bootstrap() {
 
   // Swagger documentation
   const config = new DocumentBuilder()
-    .setTitle('CYPHER API')
-    .setDescription('The CYPHER movie platform API description')
+    .setTitle('FLICKHQ API')
+    .setDescription('The FLICKHQ movie platform API description')
     .setVersion('1.0')
-    .addTag('CYPHER')
+    .addTag('FLICKHQ')
     .addTag('auth')
     .addBearerAuth()
     .build();

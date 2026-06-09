@@ -10,10 +10,11 @@ import { UserModule } from './user/user.module';
 import { MailerModule } from '@nestjs-modules/mailer';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ScheduleModule } from '@nestjs/schedule';
-import { CategoriesModule } from './categories/categories.module';
-import { BlogModule } from './blog/blog.module';
+
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { BillingModule } from './billing/billing.module';
+import { PlansSubscriptionsModule } from './plans-subscriptions/plans-subscriptions.module';
+import { ListsModule } from './modules/lists/lists.module';
 
 // config files
 import { throttlerConfig } from './config/throttler.config';
@@ -71,9 +72,9 @@ const JWT_OPTIONS = {
     UserModule,
     MailModule,
     NotificationsModule,
-    CategoriesModule,
-    BlogModule,
     BillingModule,
+    PlansSubscriptionsModule,
+    ListsModule,
   ],
   controllers: [AppController],
   exports: [JwtModule],

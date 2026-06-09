@@ -10,9 +10,9 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { ApiTags } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
+import { AuthCookieService } from './auth-cookie.service';
 import { Public } from './decorators/public.decorator';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { LoginDto } from './dto/login.dto';
@@ -27,31 +27,30 @@ import type { Response } from 'express';
 @Controller('auth')
 @Public()
 export class AuthPublicController {
-  private readonly cookieName: string;
-  private readonly frontendUrl: string;
-  private readonly isProduction: boolean;
-
   constructor(
     private readonly authService: AuthService,
-    private readonly configService: ConfigService,
-  ) {
-    this.cookieName =
-      this.configService.get<string>('AUTH_TOKEN') ?? 'sanad_auth_token';
-    this.frontendUrl =
-      this.configService.get<string>('FRONTEND_URL') ?? 'http://localhost:3000';
-    this.isProduction =
-      this.configService.get<string>('NODE_ENV') === 'production';
-  }
+    private readonly authCookieService: AuthCookieService,
+  ) {}
 
   /**
-   * Authenticates a user and returns a JWT token.
+   * Authenticates a user.
+   * Sets an HttpOnly cookie with the JWT on success.
+   * Returns user data only — the access token is never exposed in the response body.
    */
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @UseGuards(ThrottlerGuard)
   @Throttle({ default: { limit: 5, ttl: 15 * 60 * 1000 } }) // 5 attempts per 15 minutes
-  normalLogin(@Body() dto: LoginDto) {
-    return this.authService.login(dto);
+  async normalLogin(
+    @Body() dto: LoginDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.authService.login(dto);
+
+    // Set JWT as an HttpOnly cookie — never expose it in the response body
+    this.authCookieService.setAuthCookie(res, result.access_token);
+
+    return { user: result.user };
   }
 
   /**
@@ -106,6 +105,7 @@ export class AuthPublicController {
 
   /**
    * Handles the callback from Google OAuth2.
+   * Sets the JWT as an HttpOnly cookie and redirects to the frontend.
    */
   @Get('google/callback')
   @UseGuards(AuthGuard('google'))
@@ -119,14 +119,8 @@ export class AuthPublicController {
       avatar,
     });
 
-    res.cookie(this.cookieName, result.access_token, {
-      httpOnly: true,
-      secure: this.isProduction,
-      sameSite: 'strict',
-      maxAge: 5 * 24 * 60 * 60 * 1000,
-      path: '/',
-    });
+    this.authCookieService.setAuthCookie(res, result.access_token);
 
-    return res.redirect(`${this.frontendUrl}?refresh=1`);
+    return res.redirect(`${this.authCookieService.redirectUrl}?refresh=1`);
   }
 }
