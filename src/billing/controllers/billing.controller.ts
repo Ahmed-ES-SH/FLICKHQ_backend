@@ -38,6 +38,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  InternalServerErrorException,
   Post,
   UseInterceptors,
 } from '@nestjs/common';
@@ -55,6 +56,7 @@ import { BillingCustomerService } from '../services/billing-customer.service';
 import { BillingPortalService } from '../services/billing-portal.service';
 import { BillingCheckoutService } from '../services/billing-checkout.service';
 import { BillingEntitlementsService } from '../services/billing-entitlements.service';
+import { BillingStripeService } from '../services/billing-stripe.service';
 import { BillingCustomerResponseDto } from '../dto/billing-customer.dto';
 import { BillingPortalSessionResponseDto } from '../dto/billing-portal.dto';
 import { BillingEntitlementResponseDto } from '../dto/billing-entitlement.dto';
@@ -62,6 +64,10 @@ import {
   BillingCheckoutSessionResponseDto,
   BillingOneTimeCheckoutRequestDto,
   BillingSubscriptionCheckoutRequestDto,
+  CreateSubscriptionFromPaymentDto,
+  CreateSubscriptionFromPaymentResponseDto,
+  EmbeddedElementsCheckoutResponseDto,
+  OneTimeElementsCheckoutResponseDto,
 } from '../dto/billing-checkout.dto';
 import {
   IDEMPOTENCY_KEY_HEADER,
@@ -84,6 +90,7 @@ export class BillingController {
     private readonly portalService: BillingPortalService,
     private readonly checkoutService: BillingCheckoutService,
     private readonly entitlementsService: BillingEntitlementsService,
+    private readonly stripeService: BillingStripeService,
   ) {}
 
   @Get('customer')
@@ -228,6 +235,172 @@ export class BillingController {
       idempotencyKey,
     });
     return result;
+  }
+
+  @Post('checkout/embedded-elements')
+  @HttpCode(HttpStatus.OK)
+  @ApiHeader({
+    name: IDEMPOTENCY_KEY_HEADER,
+    required: true,
+    description:
+      'Caller-supplied idempotency key. The same key + same body returns the cached PaymentIntent; a different body with the same key returns 409.',
+  })
+  @ApiOperation({
+    summary:
+      'Create a PaymentIntent for a subscription and return the clientSecret for Stripe Elements.',
+    description:
+      'This endpoint creates a PaymentIntent directly (not a Checkout Session). ' +
+      'The frontend uses the returned clientSecret with <Elements> + <PaymentElement>. ' +
+      'After stripe.confirmPayment() succeeds, call POST /api/billing/subscriptions/create ' +
+      'with the returned paymentIntentId to create the actual subscription.',
+  })
+  @ApiOkResponse({
+    description:
+      'PaymentIntent client_secret and ID for Stripe Elements.',
+    type: EmbeddedElementsCheckoutResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: 'Billing price or plan not found.',
+  })
+  @ApiResponse({
+    status: HttpStatus.CONFLICT,
+    description:
+      'Price is not active, has the wrong type, the plan is archived, or the user already has an active subscription.',
+  })
+  async createEmbeddedElementsCheckout(
+    @GetUser() user: AuthenticatedUserShape,
+    @IdempotencyKey() idempotencyKey: string,
+    @Body() dto: BillingSubscriptionCheckoutRequestDto,
+  ): Promise<EmbeddedElementsCheckoutResponseDto> {
+    // Creates a PaymentIntent for the subscription's initial payment.
+    // The payment is confirmed on the frontend via Elements, then
+    // the subscription is created server-side in a separate call.
+    const result = await this.checkoutService.createSubscriptionPaymentIntent({
+      userId: user.id,
+      priceId: dto.priceId,
+      quantity: dto.quantity ?? 1,
+      clientReferenceId: dto.clientReferenceId ?? null,
+      idempotencyKey,
+    });
+
+    return {
+      paymentIntentId: result.paymentIntentId,
+      clientSecret: result.clientSecret,
+    };
+  }
+
+  @Post('checkout/embedded-elements-one-time')
+  @HttpCode(HttpStatus.OK)
+  @ApiHeader({
+    name: IDEMPOTENCY_KEY_HEADER,
+    required: true,
+    description:
+      'Caller-supplied idempotency key. The same key + same body returns the cached checkout session; a different body with the same key returns 409.',
+  })
+  @ApiOperation({
+    summary:
+      'Create a one-time Checkout Session and return the PaymentIntent clientSecret for use with Stripe Elements.',
+    description:
+      'One-time payments still use a Checkout Session (mode: payment) because ' +
+      'payment_intent IS populated immediately for this mode.',
+  })
+  @ApiOkResponse({
+    description:
+      'Checkout Session ID and PaymentIntent client_secret for Stripe Elements.',
+    type: OneTimeElementsCheckoutResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: 'Billing price not found.',
+  })
+  @ApiResponse({
+    status: HttpStatus.CONFLICT,
+    description:
+      'Price is not active, has the wrong type, or the plan is archived.',
+  })
+  async createEmbeddedElementsOneTimeCheckout(
+    @GetUser() user: AuthenticatedUserShape,
+    @IdempotencyKey() idempotencyKey: string,
+    @Body() dto: BillingOneTimeCheckoutRequestDto,
+  ): Promise<OneTimeElementsCheckoutResponseDto> {
+    // 1. Create the Checkout Session using the existing service
+    const sessionResult = await this.checkoutService.createOneTimeCheckout({
+      userId: user.id,
+      priceId: dto.priceId,
+      quantity: dto.quantity ?? 1,
+      allowPromotionCodes: dto.allowPromotionCodes ?? true,
+      idempotencyKey,
+    });
+
+    // 2. Retrieve the session from Stripe, expanded with payment_intent
+    const session = await this.stripeService
+      .getClient()
+      .checkout.sessions.retrieve(sessionResult.sessionId, {
+        expand: ['payment_intent'],
+      });
+
+    // 3. Extract the PaymentIntent client_secret
+    //    When expanded, payment_intent is the full PaymentIntent object.
+    const paymentIntent = session.payment_intent;
+    if (!paymentIntent || typeof paymentIntent === 'string' || !paymentIntent.client_secret) {
+      throw new InternalServerErrorException(
+        'Failed to retrieve PaymentIntent clientSecret',
+      );
+    }
+
+    // 4. Return both identifiers
+    return {
+      sessionId: session.id,
+      clientSecret: paymentIntent.client_secret,
+    };
+  }
+
+  @Post('subscriptions/create')
+  @HttpCode(HttpStatus.OK)
+  @ApiHeader({
+    name: IDEMPOTENCY_KEY_HEADER,
+    required: true,
+    description:
+      'Caller-supplied idempotency key. Prevents duplicate subscription creation if the request is retried.',
+  })
+  @ApiOperation({
+    summary:
+      'Create a Stripe subscription from a confirmed PaymentIntent.',
+    description:
+      'Call this after stripe.confirmPayment() succeeds. The backend verifies ' +
+      'the PaymentIntent status is "succeeded", then creates the subscription ' +
+      'with the confirmed payment method as the default.',
+  })
+  @ApiOkResponse({
+    description:
+      'The created Stripe subscription ID and status.',
+    type: CreateSubscriptionFromPaymentResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: 'BillingPayment or BillingPrice not found.',
+  })
+  @ApiResponse({
+    status: HttpStatus.CONFLICT,
+    description:
+      'User already has an active subscription (race condition).',
+  })
+  async createSubscriptionFromPayment(
+    @GetUser() user: AuthenticatedUserShape,
+    @IdempotencyKey() idempotencyKey: string,
+    @Body() dto: CreateSubscriptionFromPaymentDto,
+  ): Promise<CreateSubscriptionFromPaymentResponseDto> {
+    const result = await this.checkoutService.createSubscriptionFromPayment({
+      userId: user.id,
+      paymentIntentId: dto.paymentIntentId,
+      idempotencyKey,
+    });
+
+    return {
+      subscriptionId: result.subscriptionId,
+      status: result.status,
+    };
   }
 
   @Get('entitlements')

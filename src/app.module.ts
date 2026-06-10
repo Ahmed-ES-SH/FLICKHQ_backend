@@ -15,6 +15,7 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
 import { BillingModule } from './billing/billing.module';
 import { PlansSubscriptionsModule } from './plans-subscriptions/plans-subscriptions.module';
 import { ListsModule } from './modules/lists/lists.module';
+import { ContactModule } from './contact/contact.module';
 
 // config files
 import { throttlerConfig } from './config/throttler.config';
@@ -75,6 +76,7 @@ const JWT_OPTIONS = {
     BillingModule,
     PlansSubscriptionsModule,
     ListsModule,
+    ContactModule,
   ],
   controllers: [AppController],
   exports: [JwtModule],

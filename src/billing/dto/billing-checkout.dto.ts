@@ -178,6 +178,91 @@ export class BillingCheckoutSessionResponseDto {
 }
 
 /**
+ * Response returned by the subscription Elements-based checkout endpoint.
+ *
+ * Unlike `BillingCheckoutSessionResponseDto`, this DTO always
+ * contains a `clientSecret` which is a PaymentIntent client_secret
+ * (`pi_*_secret_*`), NOT an embedded session client_secret.
+ *
+ * The frontend uses this `clientSecret` with `<Elements>` +
+ * `<PaymentElement>` to render a fully custom payment form.
+ * After the user confirms payment, the frontend calls
+ * `POST /api/billing/subscriptions/create` with the `paymentIntentId`.
+ */
+export class EmbeddedElementsCheckoutResponseDto {
+  @ApiProperty({
+    description:
+      'PaymentIntent ID (pi_*). The frontend passes this to POST /api/billing/subscriptions/create after confirmPayment().',
+    example: 'pi_3RabcDEFghijklmn',
+  })
+  paymentIntentId: string;
+
+  @ApiProperty({
+    description:
+      'PaymentIntent client_secret (pi_*_secret_*) — used by Stripe Elements on the frontend with <PaymentElement>.',
+    example: 'pi_3RabcDEFghijklmn_secret_XYZ123abcDEFghijklmn',
+  })
+  clientSecret: string;
+}
+
+/**
+ * Response returned by the one-time Elements-based checkout endpoint.
+ * The one-time variation still uses a Checkout Session (mode: 'payment')
+ * since `payment_intent` IS populated immediately for this mode.
+ *
+ * Keeps `sessionId` so the success page can use it for reference.
+ */
+export class OneTimeElementsCheckoutResponseDto {
+  @ApiProperty({
+    description: 'Stripe Checkout Session ID (cs_test_*).',
+    example: 'cs_test_a1b2c3d4e5f6g7h8',
+  })
+  sessionId: string;
+
+  @ApiProperty({
+    description:
+      'PaymentIntent client_secret (pi_*_secret_*) — used by Stripe Elements on the frontend with <PaymentElement>.',
+    example: 'pi_3RabcDEFghijklmn_secret_XYZ123abcDEFghijklmn',
+  })
+  clientSecret: string;
+}
+
+/**
+ * Request body for confirming a subscription after Elements payment.
+ *
+ * After the frontend calls stripe.confirmPayment() and it succeeds,
+ * it calls this endpoint with the `paymentIntentId` to create the
+ * actual Stripe subscription server-side using the confirmed
+ * payment method.
+ */
+export class CreateSubscriptionFromPaymentDto {
+  @ApiProperty({
+    description:
+      'The PaymentIntent ID (pi_*) returned by POST /api/billing/checkout/embedded-elements. Must be in succeeded status.',
+    example: 'pi_3RabcDEFghijklmn',
+  })
+  paymentIntentId: string;
+}
+
+/**
+ * Response returned after creating a subscription from a confirmed PaymentIntent.
+ */
+export class CreateSubscriptionFromPaymentResponseDto {
+  @ApiProperty({
+    description: 'Stripe Subscription ID (sub_*).',
+    example: 'sub_1Qwertyuiop',
+  })
+  subscriptionId: string;
+
+  @ApiProperty({
+    description: 'Status of the created subscription.',
+    example: 'active',
+    enum: ['active', 'trialing', 'past_due'],
+  })
+  status: string;
+}
+
+/**
  * Re-export the portal response DTO from the same shape so the
  * controller can keep its imports consistent. The portal response
  * is just `{ url }`.

@@ -34,6 +34,7 @@
 import {
   ConflictException,
   Injectable,
+  InternalServerErrorException,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
@@ -106,6 +107,30 @@ export interface BillingCheckoutSessionResult {
   sessionId: string;
   url: string;
   clientSecret?: string;
+}
+
+export interface BillingSubscriptionPaymentIntentInput {
+  userId: number;
+  priceId: string;
+  quantity: number;
+  clientReferenceId?: string | null;
+  idempotencyKey: string;
+}
+
+export interface BillingSubscriptionPaymentIntentResult {
+  paymentIntentId: string;
+  clientSecret: string;
+}
+
+export interface BillingCreateSubscriptionFromPaymentInput {
+  userId: number;
+  paymentIntentId: string;
+  idempotencyKey: string;
+}
+
+export interface BillingCreateSubscriptionFromPaymentResult {
+  subscriptionId: string;
+  status: string;
 }
 
 @Injectable()
@@ -416,6 +441,282 @@ export class BillingCheckoutService {
           );
         }
       }
+      throw err;
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // Subscription — PaymentIntent-first (Elements)
+  // ─────────────────────────────────────────────
+
+  /**
+   * Create a PaymentIntent directly for the subscription's initial
+   * payment. Unlike the Checkout Session flow, this PaymentIntent
+   * has an immediate `client_secret` that the frontend can use
+   * with `<Elements>` + `<PaymentElement>`.
+   *
+   * After the frontend confirms the payment via
+   * `stripe.confirmPayment()`, it calls
+   * `createSubscriptionFromPayment()` to create the actual Stripe
+   * subscription using the confirmed payment method.
+   */
+  async createSubscriptionPaymentIntent(
+    input: BillingSubscriptionPaymentIntentInput,
+  ): Promise<BillingSubscriptionPaymentIntentResult> {
+    const idempotencyKey = this.idempotency.normalizeKey(input.idempotencyKey);
+    const idempotencyRequest = {
+      priceId: input.priceId,
+      quantity: input.quantity,
+      clientReferenceId: input.clientReferenceId ?? null,
+    };
+    const reservation = await this.idempotency.reserve({
+      key: idempotencyKey,
+      scope: 'subscription.payment_intent',
+      userId: input.userId,
+      request: idempotencyRequest,
+    });
+    if (!reservation.fresh && reservation.cachedResponse) {
+      return reservation.cachedResponse as unknown as BillingSubscriptionPaymentIntentResult;
+    }
+
+    const price = await this.loadAndValidatePrice(input.priceId);
+    this.assertPriceType(price, BillingPriceType.RECURRING, input.priceId);
+    await this.assertPricePlanSellable(price.planId);
+    await this.assertNoActiveSubscription(input.userId);
+
+    const customer = await this.customerService.getOrCreateForUser(
+      input.userId,
+    );
+
+    let payment: BillingPayment | null = null;
+    try {
+      const amount = price.unitAmount * input.quantity;
+
+      payment = this.paymentRepository.create({
+        userId: input.userId,
+        billingCustomerId: customer.id,
+        priceId: price.id,
+        amount,
+        currency: price.currency,
+        status: BillingPaymentStatus.PENDING,
+        description: this.buildSubscriptionDescription(price),
+        metadata: {
+          source: 'elements',
+          kind: 'subscription',
+          quantity: input.quantity,
+          clientReferenceId: input.clientReferenceId ?? null,
+        },
+      });
+      payment = await this.paymentRepository.save(payment);
+
+      const paymentIntent = await this.stripeService.safeCall(() =>
+        this.stripeService.getClient().paymentIntents.create({
+          amount,
+          currency: price.currency.toLowerCase(),
+          customer: customer.stripeCustomerId,
+          setup_future_usage: 'off_session',
+          metadata: {
+            localPaymentId: payment!.id,
+            localPriceId: price.id,
+            billingCustomerId: customer.id,
+            userId: String(input.userId),
+            quantity: String(input.quantity),
+            clientReferenceId: input.clientReferenceId ?? '',
+          },
+        }),
+      );
+
+      payment.stripePaymentIntentId = paymentIntent.id;
+      payment = await this.paymentRepository.save(payment);
+
+      this.eventEmitter.emit(BILLING_EVENTS.CHECKOUT_CREATED, {
+        kind: 'subscription_elements',
+        userId: input.userId,
+        billingCustomerId: customer.id,
+        localPaymentId: payment.id,
+        paymentIntentId: paymentIntent.id,
+      });
+
+      const result: BillingSubscriptionPaymentIntentResult = {
+        paymentIntentId: paymentIntent.id,
+        clientSecret: paymentIntent.client_secret ?? '',
+      };
+
+      await this.idempotency.recordSuccess(
+        idempotencyKey,
+        result as unknown as Record<string, unknown>,
+      );
+      return result;
+    } catch (err) {
+      await this.idempotency.recordFailure(idempotencyKey);
+      throw err;
+    }
+  }
+
+  /**
+   * Create the actual Stripe subscription after the frontend has
+   * confirmed the PaymentIntent via Stripe Elements.
+   *
+   * Steps:
+   * 1. Retrieve the PaymentIntent from Stripe to verify it succeeded
+   * 2. Find the local BillingPayment row
+   * 3. Create a subscription on Stripe with the confirmed payment method
+   * 4. Save the local BillingSubscription and update BillingPayment
+   */
+  async createSubscriptionFromPayment(
+    input: BillingCreateSubscriptionFromPaymentInput,
+  ): Promise<BillingCreateSubscriptionFromPaymentResult> {
+    const idempotencyKey = this.idempotency.normalizeKey(input.idempotencyKey);
+    const idempotencyRequest = {
+      paymentIntentId: input.paymentIntentId,
+    };
+    const reservation = await this.idempotency.reserve({
+      key: idempotencyKey,
+      scope: 'subscription.create_from_payment',
+      userId: input.userId,
+      request: idempotencyRequest,
+    });
+    if (!reservation.fresh && reservation.cachedResponse) {
+      return reservation.cachedResponse as unknown as BillingCreateSubscriptionFromPaymentResult;
+    }
+
+    try {
+      // 1. Retrieve the PaymentIntent from Stripe
+      const paymentIntent = await this.stripeService.safeCall(() =>
+        this.stripeService
+          .getClient()
+          .paymentIntents.retrieve(input.paymentIntentId),
+      );
+
+      // 2. Verify it succeeded
+      if (paymentIntent.status !== 'succeeded') {
+        throw new InternalServerErrorException(
+          `PaymentIntent ${input.paymentIntentId} has status "${paymentIntent.status}". Expected "succeeded".`,
+        );
+      }
+
+      const paymentMethodId = paymentIntent.payment_method as string | null;
+      if (!paymentMethodId) {
+        throw new InternalServerErrorException(
+          `PaymentIntent ${input.paymentIntentId} has no payment_method. Cannot create subscription.`,
+        );
+      }
+
+      // 3. Find the local BillingPayment
+      const localPayment = await this.paymentRepository.findOne({
+        where: { stripePaymentIntentId: input.paymentIntentId },
+      });
+      if (!localPayment) {
+        throw new NotFoundException(
+          `BillingPayment with stripePaymentIntentId ${input.paymentIntentId} not found.`,
+        );
+      }
+
+      // 4. Load the price
+      if (!localPayment.priceId) {
+        throw new NotFoundException(
+          `BillingPayment ${localPayment.id} has no priceId.`,
+        );
+      }
+      const price = await this.catalog.findPriceById(localPayment.priceId);
+      if (!price) {
+        throw new NotFoundException(
+          `BillingPrice ${localPayment.priceId} not found.`,
+        );
+      }
+
+      const quantity = localPayment.metadata?.quantity
+        ? Number(localPayment.metadata.quantity)
+        : 1;
+
+      const customer = await this.customerService.getOrCreateForUser(
+        input.userId,
+      );
+
+      // 5. Check no active subscription (race condition protection)
+      await this.assertNoActiveSubscription(input.userId);
+
+      // 6. Create the subscription on Stripe
+      const subscription = await this.stripeService.safeCall(() =>
+        this.stripeService.getClient().subscriptions.create({
+          customer: customer.stripeCustomerId,
+          items: [
+            {
+              price: price.stripePriceId,
+              quantity,
+            },
+          ],
+          default_payment_method: paymentMethodId,
+          metadata: {
+            localPaymentId: localPayment.id,
+            localPriceId: price.id,
+            billingCustomerId: customer.id,
+            userId: String(input.userId),
+          },
+        }),
+      );
+
+      // 7. Save the local BillingSubscription
+      // Stripe SDK v22 omits current_period_start/current_period_end from the
+      // Subscription type (they're only on SubscriptionItem). The fields still
+      // exist in the API response at runtime.
+      const subscriptionWithPeriod = subscription as typeof subscription & {
+        current_period_start: number | null;
+        current_period_end: number | null;
+      };
+
+      const localSubscription = this.subscriptionRepository.create({
+        userId: input.userId,
+        billingCustomerId: customer.id,
+        planId: price.planId,
+        priceId: price.id,
+        stripeSubscriptionId: subscription.id,
+        stripeCheckoutSessionId: null,
+        status: BillingSubscriptionStatus.ACTIVE,
+        currentPeriodStart: subscriptionWithPeriod.current_period_start
+          ? new Date(subscriptionWithPeriod.current_period_start * 1000)
+          : undefined,
+        currentPeriodEnd: subscriptionWithPeriod.current_period_end
+          ? new Date(subscriptionWithPeriod.current_period_end * 1000)
+          : undefined,
+        trialEnd: subscription.trial_end
+          ? new Date(subscription.trial_end * 1000)
+          : undefined,
+        metadata: {
+          source: 'elements',
+          localPaymentId: localPayment.id,
+          clientReferenceId:
+            localPayment.metadata?.clientReferenceId ?? null,
+        },
+      });
+      await this.subscriptionRepository.save(localSubscription);
+
+      // 8. Update the BillingPayment
+      localPayment.status = BillingPaymentStatus.SUCCEEDED;
+      localPayment.stripeCheckoutSessionId = null; // Not used in this flow
+      await this.paymentRepository.save(localPayment);
+
+      this.eventEmitter.emit(BILLING_EVENTS.SUBSCRIPTION_CREATED, {
+        userId: input.userId,
+        billingCustomerId: customer.id,
+        localPaymentId: localPayment.id,
+        localSubscriptionId: localSubscription.id,
+        stripeSubscriptionId: subscription.id,
+        status: subscription.status,
+      });
+
+      const result: BillingCreateSubscriptionFromPaymentResult = {
+        subscriptionId: subscription.id,
+        status: subscription.status,
+      };
+
+      await this.idempotency.recordSuccess(
+        idempotencyKey,
+        result as unknown as Record<string, unknown>,
+      );
+      return result;
+    } catch (err) {
+      await this.idempotency.recordFailure(idempotencyKey);
       throw err;
     }
   }
