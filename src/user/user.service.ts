@@ -10,9 +10,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { ILike, FindOptionsWhere, Repository } from 'typeorm';
 import { User } from './schema/user.entity';
 import * as argon2 from 'argon2';
-import { paginate, PaginatedResult } from 'src/helpers/paginate.helper';
+import { paginate, PaginatedResult } from '../helpers/paginate.helper';
 import { FilterOptionsDto } from './dto/filter-options.dto';
-import { UserRoleEnum } from 'src/auth/types/UserRoleEnum';
+import { UserRoleEnum } from '../auth/types/UserRoleEnum';
 
 @Injectable()
 export class UserService {
