@@ -1,5 +1,0 @@
-allowBuilds:
-  '@nestjs/core': true
-  '@scarf/scarf': true
-  argon2: true
-  unrs-resolver: true
