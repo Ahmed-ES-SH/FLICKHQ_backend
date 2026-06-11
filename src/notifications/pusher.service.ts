@@ -1,6 +1,6 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import Pusher from 'pusher';
-import { v4 as uuidv4 } from 'uuid';
 
 export interface NotificationEventPayload {
   eventId: string;
@@ -115,7 +115,7 @@ export class PusherService {
     payload: Record<string, unknown>,
   ): Promise<void> {
     const enrichedPayload: NotificationEventPayload = {
-      eventId: uuidv4(),
+      eventId: randomUUID(),
       userId,
       notificationId: (payload.notificationId as string) || '',
       type: (payload.type as string) || '',
@@ -134,7 +134,7 @@ export class PusherService {
 
   async emitReadUpdate(userId: string, notificationId: string): Promise<void> {
     const payload = {
-      eventId: uuidv4(),
+      eventId: randomUUID(),
       userId,
       notificationId,
       timestamp: new Date().toISOString(),
@@ -149,7 +149,7 @@ export class PusherService {
 
   async emitReadAllUpdate(userId: string): Promise<void> {
     const payload = {
-      eventId: uuidv4(),
+      eventId: randomUUID(),
       userId,
       timestamp: new Date().toISOString(),
     };
@@ -163,7 +163,7 @@ export class PusherService {
 
   async emitCountUpdate(userId: string, unreadCount: number): Promise<void> {
     const payload = {
-      eventId: uuidv4(),
+      eventId: randomUUID(),
       userId,
       unreadCount,
       timestamp: new Date().toISOString(),
@@ -178,7 +178,7 @@ export class PusherService {
 
   async emitDelete(userId: string, notificationId: string): Promise<void> {
     const payload = {
-      eventId: uuidv4(),
+      eventId: randomUUID(),
       userId,
       notificationId,
       timestamp: new Date().toISOString(),
@@ -196,7 +196,7 @@ export class PusherService {
     payload: Omit<PaymentStatusPayload, 'eventId' | 'timestamp'>,
   ): Promise<void> {
     const enrichedPayload: PaymentStatusPayload = {
-      eventId: uuidv4(),
+      eventId: randomUUID(),
       status: payload.status,
       amount: payload.amount,
       description: payload.description,
@@ -212,7 +212,7 @@ export class PusherService {
 
   async broadcast(payload: Record<string, unknown>): Promise<void> {
     const enrichedPayload = {
-      eventId: uuidv4(),
+      eventId: randomUUID(),
       ...payload,
       timestamp: new Date().toISOString(),
     };
