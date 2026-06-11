@@ -13,8 +13,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     private readonly configService: ConfigService,
     private readonly usersService: UserService,
   ) {
-    const cookieName =
-      configService.get<string>('AUTH_TOKEN') ?? 'flick_auth_token';
+    const cookieName = configService.getOrThrow<string>('AUTH_TOKEN');
 
     super({
       jwtFromRequest: (req: RequestWithUser) =>

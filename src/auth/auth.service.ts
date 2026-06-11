@@ -12,7 +12,7 @@ import {
 import { LoginDto } from './dto/login.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { User } from '../user/schema/user.entity';
-import { Repository } from 'typeorm';
+import { Not, Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { UserService } from '../user/user.service';
 import { ValidateGoogleUserInput } from './types/validateGoogleUser';
@@ -72,7 +72,7 @@ export class AuthService {
     }
 
     const payload = { id: user.id, email: user.email, role: user.role };
-    const token = this.jwtService.sign(payload);
+    const token = await this.jwtService.signAsync(payload);
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password, ...userWithoutPassword } = user;
@@ -243,8 +243,9 @@ export class AuthService {
       if (user) {
         // Existing user without Google link — link the account
         user.googleId = googleId;
-        user.avatar = avatar;
-        user.name = name;
+        if (!user.avatar && avatar) {
+          user.avatar = avatar;
+        }
         user.isEmailVerified = true;
         user = await this.userRepo.save(user);
       } else {
@@ -252,8 +253,8 @@ export class AuthService {
         user = await this.userRepo.save({
           email,
           googleId,
-          name,
-          avatar,
+          name: await this.getUniqueName(name),
+          avatar: avatar ?? null,
           isEmailVerified: true,
           role: UserRoleEnum.USER,
         });
@@ -263,7 +264,7 @@ export class AuthService {
     }
 
     const payload = { id: user.id, email: user.email, role: user.role };
-    const access_token = this.jwtService.sign(payload);
+    const access_token = await this.jwtService.signAsync(payload);
 
     return { access_token, user };
   }
@@ -348,6 +349,27 @@ export class AuthService {
   }
 
   // MARK: Private helpers
+
+  private async getUniqueName(
+    name: string,
+    excludeUserId?: number,
+  ): Promise<string> {
+    let uniqueName = name;
+    let attempts = 0;
+    while (
+      await this.userRepo.findOne({
+        where: {
+          name: uniqueName,
+          ...(excludeUserId ? { id: Not(excludeUserId) } : {}),
+        },
+      })
+    ) {
+      uniqueName = `${name}_${Math.floor(1000 + Math.random() * 9000)}`;
+      attempts++;
+      if (attempts > 10) break;
+    }
+    return uniqueName;
+  }
 
   private async addVerificationToken(
     userId: number,

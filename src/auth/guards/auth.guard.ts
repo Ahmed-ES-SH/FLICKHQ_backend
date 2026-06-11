@@ -11,8 +11,6 @@ import { AuthService } from '../auth.service';
 import { Reflector } from '@nestjs/core';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { RequestWithUser } from '../types/request.interface';
-import { UserService } from '../../user/user.service';
-import { UserRoleEnum } from '../types/UserRoleEnum';
 
 @Injectable()
 export class AuthGuard implements CanActivate {
@@ -23,10 +21,8 @@ export class AuthGuard implements CanActivate {
     private readonly jwtService: JwtService,
     private reflector: Reflector,
     private readonly configService: ConfigService,
-    private readonly userService: UserService,
   ) {
-    this.cookieName =
-      this.configService.get<string>('AUTH_TOKEN') ?? 'flick_auth_token';
+    this.cookieName = this.configService.getOrThrow<string>('AUTH_TOKEN');
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -47,7 +43,7 @@ export class AuthGuard implements CanActivate {
       const decodedToken = await this.jwtService.verifyAsync<{
         id: number;
         email: string;
-        role: UserRoleEnum;
+        role: string;
       }>(token);
 
       const isBlacklisted = await this.authService.isTokenBlacklisted(token);
@@ -55,12 +51,7 @@ export class AuthGuard implements CanActivate {
         throw new UnauthorizedException('This token has been revoked');
       }
 
-      const user = await this.userService.findById(decodedToken.id);
-      if (!user) {
-        throw new UnauthorizedException('User not found');
-      }
-
-      request.user = user;
+      request.user = decodedToken;
 
       return true;
     } catch (error) {

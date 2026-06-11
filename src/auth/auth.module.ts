@@ -12,6 +12,7 @@ import { GoogleStrategy } from './strategies/google.strategy';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { MailModule } from '../mail/mail.module';
 import { AuthGuard } from './guards/auth.guard';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { AuthCookieService } from './auth-cookie.service';
 import { BlackList } from './schema/blacklist-tokens.schema';
 import { AuthPublicController } from './auth.public.controller';
@@ -56,6 +57,7 @@ const JWT_OPTIONS = {
     AuthCookieService,
     GoogleStrategy,
     JwtStrategy,
+    JwtAuthGuard,
     // Global guard — handles auth for all routes, respects @Public()
     { provide: APP_GUARD, useClass: AuthGuard },
   ],
