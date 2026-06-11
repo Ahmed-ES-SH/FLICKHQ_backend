@@ -11,6 +11,7 @@ import { AuthService } from '../auth.service';
 import { Reflector } from '@nestjs/core';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { RequestWithUser } from '../types/request.interface';
+import { User } from '../../user/schema/user.entity';
 
 @Injectable()
 export class AuthGuard implements CanActivate {
@@ -51,7 +52,7 @@ export class AuthGuard implements CanActivate {
         throw new UnauthorizedException('This token has been revoked');
       }
 
-      request.user = decodedToken;
+      request.user = decodedToken as User;
 
       return true;
     } catch (error) {

@@ -52,9 +52,19 @@ export class AuthService {
 
   // MARK: Authentication — login / logout
 
-  async login(
-    dto: LoginDto,
-  ): Promise<{ user: Omit<User, 'password'>; access_token: string }> {
+  async login(dto: LoginDto): Promise<{
+    user: Omit<User, 'password'>;
+    access_token: string;
+    subscription: {
+      plan: Partial<BillingPlan> & { code: string; name: string };
+      status: string;
+      periodStart?: Date | null;
+      periodEnd?: Date | null;
+      trialEnd?: Date | null;
+      cancelAtPeriodEnd?: boolean;
+      canceledAt?: Date | null;
+    };
+  }> {
     const user = await this.userRepo.findOne({
       where: { email: dto.email },
       select: ['id', 'email', 'role', 'password', 'isEmailVerified', 'avatar'],
@@ -77,7 +87,66 @@ export class AuthService {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password, ...userWithoutPassword } = user;
 
-    return { user: userWithoutPassword, access_token: token };
+    const activeSubscription = await this.billingSubscriptionRepo.findOne({
+      where: [
+        { userId: user.id, status: BillingSubscriptionStatus.ACTIVE },
+        { userId: user.id, status: BillingSubscriptionStatus.TRIALING },
+        { userId: user.id, status: BillingSubscriptionStatus.PAST_DUE },
+      ],
+      relations: ['plan', 'price'],
+      order: { createdAt: 'DESC' },
+    });
+
+    let subscription: {
+      plan: Partial<BillingPlan> & { code: string; name: string };
+      status: string;
+      periodStart?: Date | null;
+      periodEnd?: Date | null;
+      trialEnd?: Date | null;
+      cancelAtPeriodEnd?: boolean;
+      canceledAt?: Date | null;
+    };
+
+    if (activeSubscription?.plan) {
+      subscription = {
+        plan: {
+          id: activeSubscription.plan.id,
+          code: activeSubscription.plan.code,
+          name: activeSubscription.plan.name,
+          description: activeSubscription.plan.description,
+          features: activeSubscription.plan.features,
+          icon: activeSubscription.plan.icon,
+          highlight: activeSubscription.plan.highlight,
+        },
+        status: activeSubscription.status,
+        periodStart: activeSubscription.currentPeriodStart,
+        periodEnd: activeSubscription.currentPeriodEnd,
+        trialEnd: activeSubscription.trialEnd,
+        cancelAtPeriodEnd: activeSubscription.cancelAtPeriodEnd,
+        canceledAt: activeSubscription.canceledAt,
+      };
+    } else {
+      const freePlan = await this.billingPlanRepo.findOne({
+        where: { code: 'free' },
+      });
+
+      subscription = {
+        plan: freePlan
+          ? {
+              id: freePlan.id,
+              code: freePlan.code,
+              name: freePlan.name,
+              description: freePlan.description,
+              features: freePlan.features,
+              icon: freePlan.icon,
+              highlight: freePlan.highlight,
+            }
+          : { code: 'free', name: 'Free' },
+        status: 'free',
+      };
+    }
+
+    return { user: userWithoutPassword, access_token: token, subscription };
   }
 
   async logout(token: string, userId: string): Promise<{ message: string }> {
@@ -254,10 +323,14 @@ export class AuthService {
           email,
           googleId,
           name: await this.userService.getUniqueName(name),
-          avatar: avatar ?? null,
+          avatar: avatar ?? undefined,
           isEmailVerified: true,
           role: UserRoleEnum.USER,
         });
+      }
+
+      if (!user) {
+        throw new BadRequestException('Failed to create user');
       }
 
       await this.listsService.ensureSystemLists(user.id);
@@ -271,9 +344,7 @@ export class AuthService {
 
   // MARK: Current user with plan
 
-  async getCurrentUserWithPlan(
-    userId: number,
-  ): Promise<{
+  async getCurrentUserWithPlan(userId: number): Promise<{
     user: Omit<User, 'password'>;
     subscription: {
       plan: Partial<BillingPlan> & { code: string; name: string };

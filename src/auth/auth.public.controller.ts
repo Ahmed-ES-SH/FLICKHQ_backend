@@ -50,7 +50,7 @@ export class AuthPublicController {
     // Set JWT as an HttpOnly cookie — never expose it in the response body
     this.authCookieService.setAuthCookie(res, result.access_token);
 
-    return { user: result.user };
+    return { user: result.user, subscription: result.subscription };
   }
 
   /**
