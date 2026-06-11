@@ -17,7 +17,7 @@ function ReturnMailOptions(config: ConfigService) {
       from: config.get<string>('MAIL_FROM'),
     },
     template: {
-      dir: join(process.cwd(), 'dist', 'mail', 'templates'),
+      dir: join(__dirname, '..', 'mail', 'templates'),
       adapter: new EjsAdapter(),
       options: {
         strict: false,

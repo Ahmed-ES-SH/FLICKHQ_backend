@@ -12,7 +12,7 @@ import {
 import { LoginDto } from './dto/login.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { User } from '../user/schema/user.entity';
-import { Not, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { UserService } from '../user/user.service';
 import { ValidateGoogleUserInput } from './types/validateGoogleUser';
@@ -253,7 +253,7 @@ export class AuthService {
         user = await this.userRepo.save({
           email,
           googleId,
-          name: await this.getUniqueName(name),
+          name: await this.userService.getUniqueName(name),
           avatar: avatar ?? null,
           isEmailVerified: true,
           role: UserRoleEnum.USER,
@@ -349,27 +349,6 @@ export class AuthService {
   }
 
   // MARK: Private helpers
-
-  private async getUniqueName(
-    name: string,
-    excludeUserId?: number,
-  ): Promise<string> {
-    let uniqueName = name;
-    let attempts = 0;
-    while (
-      await this.userRepo.findOne({
-        where: {
-          name: uniqueName,
-          ...(excludeUserId ? { id: Not(excludeUserId) } : {}),
-        },
-      })
-    ) {
-      uniqueName = `${name}_${Math.floor(1000 + Math.random() * 9000)}`;
-      attempts++;
-      if (attempts > 10) break;
-    }
-    return uniqueName;
-  }
 
   private async addVerificationToken(
     userId: number,

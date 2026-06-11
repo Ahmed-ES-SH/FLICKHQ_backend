@@ -7,7 +7,7 @@ import {
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { ILike, FindOptionsWhere, Repository } from 'typeorm';
+import { ILike, FindOptionsWhere, Not, Repository } from 'typeorm';
 import { User } from './schema/user.entity';
 import * as argon2 from 'argon2';
 import { paginate, PaginatedResult } from '../helpers/paginate.helper';
@@ -30,8 +30,33 @@ export class UserService {
 
     const hashedPassword = await argon2.hash(dto.password);
 
-    const user = this.userRepo.create({ ...dto, password: hashedPassword });
+    const createPayload: Partial<User> = { ...dto, password: hashedPassword };
+    if (dto.name) {
+      createPayload.name = await this.getUniqueName(dto.name);
+    }
+    const user = this.userRepo.create(createPayload);
     return this.userRepo.save(user);
+  }
+
+  async getUniqueName(
+    name: string,
+    excludeUserId?: number,
+  ): Promise<string> {
+    let uniqueName = name;
+    let attempts = 0;
+    while (
+      await this.userRepo.findOne({
+        where: {
+          name: uniqueName,
+          ...(excludeUserId ? { id: Not(excludeUserId) } : {}),
+        },
+      })
+    ) {
+      uniqueName = `${name}_${Math.floor(1000 + Math.random() * 9000)}`;
+      attempts++;
+      if (attempts > 10) break;
+    }
+    return uniqueName;
   }
 
   async stats(): Promise<{
