@@ -17,15 +17,15 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { User } from './schema/user.entity';
-import { Roles } from 'src/auth/decorators/Roles.decorator';
-import { UserRoleEnum } from 'src/auth/types/UserRoleEnum';
-import { RolesGuard } from 'src/auth/guards/roles.guard';
-import { Public } from 'src/auth/decorators/public.decorator';
+import { Roles } from '../auth/decorators/Roles.decorator';
+import { UserRoleEnum } from '../auth/types/UserRoleEnum';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Public } from '../auth/decorators/public.decorator';
 import { FilterOptionsDto } from './dto/filter-options.dto';
-import { PaginatedResult } from 'src/helpers/paginate.helper';
-import { GetUser } from 'src/auth/decorators/current-user.decorator';
-import { ListsService } from 'src/modules/lists/lists.service';
-import { MailService } from 'src/mail/mail.service';
+import { PaginatedResult } from '../helpers/paginate.helper';
+import { GetUser } from '../auth/decorators/current-user.decorator';
+import { ListsService } from '../modules/lists/lists.service';
+import { MailService } from '../mail/mail.service';
 import {
   ApiTags,
   ApiOperation,
