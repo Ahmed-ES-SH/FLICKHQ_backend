@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-call */
 // import { NestFactory } from '@nestjs/core';
 // import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 // import { AppModule } from './app.module';
@@ -108,92 +109,62 @@
 import { NestFactory } from '@nestjs/core';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
-import helmet from 'helmet';
 import { ValidationPipe } from '@nestjs/common';
+import { ExpressAdapter } from '@nestjs/platform-express';
 import cookieParser from 'cookie-parser';
-import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
-import { TransformInterceptor } from './common/interceptors/transform.interceptor';
-import { RequestLoggerMiddleware } from './common/middleware/request-logger.middleware';
+import helmet from 'helmet';
+import express from 'express';
 
-export async function createApp() {
-  const app = await NestFactory.create(AppModule, {
-    rawBody: true,
-    bufferLogs: false,
-  });
+const server = express();
+let isInitialized = false;
+
+export const createNestServer = async (expressInstance: any) => {
+  if (isInitialized) return;
+  isInitialized = true;
+
+  const app = await NestFactory.create(
+    AppModule,
+    new ExpressAdapter(expressInstance),
+    { rawBody: true },
+  );
 
   app.use(cookieParser());
-
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
       forbidNonWhitelisted: true,
-      transform: true,
     }),
   );
-
-  app.use(
-    helmet({
-      contentSecurityPolicy: {
-        directives: {
-          defaultSrc: ["'self'"],
-          scriptSrc: ["'self'", "'unsafe-inline'"],
-          styleSrc: ["'self'", "'unsafe-inline'"],
-          imgSrc: ["'self'", 'data:', 'https:'],
-          connectSrc: ["'self'", process.env.FRONTEND_URL || ''],
-          frameSrc: ["'none'"],
-          objectSrc: ["'none'"],
-        },
-      },
-      crossOriginEmbedderPolicy: false,
-    }),
-  );
-
+  app.use(helmet());
   app.enableCors({
-    origin: process.env.FRONTEND_URL || '*',
+    origin: (origin: any, callback: any) => {
+      const allowedOrigin =
+        process.env.FRONTEND_URL ?? 'https://flick-hq-app.vercel.app';
+      // Allow requests with no origin (server-to-server, curl, etc.)
+      if (!origin || origin === allowedOrigin) {
+        callback(null, true);
+      } else {
+        callback(new Error(`CORS: Origin ${origin} not allowed`));
+      }
+    },
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],
-    exposedHeaders: ['Content-Length', 'X-Response-Time'],
-    maxAge: 86400,
   });
-
-  app.useGlobalInterceptors(new TransformInterceptor());
-  app.useGlobalFilters(new GlobalExceptionFilter());
-
-  app.use(
-    new RequestLoggerMiddleware().use.bind(new RequestLoggerMiddleware()),
-  );
 
   const config = new DocumentBuilder()
     .setTitle('FLICKHQ API')
     .setDescription('The FLICKHQ movie platform API description')
     .setVersion('1.0')
     .addTag('FLICKHQ')
-    .addTag('auth')
-    .addBearerAuth()
     .build();
-
   const documentFactory = () => SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, documentFactory);
 
-  app.enableShutdownHooks();
-
   app.setGlobalPrefix('api');
 
-  return app;
-}
+  await app.init();
+};
 
-/**
- * LOCAL DEV ONLY
- */
-async function bootstrap() {
-  const app = await createApp();
-  const port = process.env.PORT || 3000;
-
-  await app.listen(port);
-  console.log(`Application running on: http://localhost:${port}`);
-}
-
-if (process.env.NODE_ENV !== 'production') {
-  bootstrap();
-}
+export default async (req: any, res: any) => {
+  await createNestServer(server);
+  server(req, res);
+};
