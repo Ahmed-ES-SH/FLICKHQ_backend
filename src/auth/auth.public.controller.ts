@@ -4,6 +4,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Logger,
   Post,
   Query,
   Req,
@@ -110,19 +111,43 @@ export class AuthPublicController {
   @Get('google/callback')
   @UseGuards(AuthGuard('google'))
   async googleAuthRedirect(@Req() req: RequestWithUser, @Res() res: Response) {
+    const logger = new Logger('GoogleAuthRedirect');
+    const redirectUrl = this.authCookieService.redirectUrl;
+
+    logger.log(
+      `Google callback received — googleId=${req.user.googleId}, email=${req.user.email}, name=${req.user.name}`,
+    );
+
     try {
+      if (!req.user.googleId) {
+        logger.error('Google callback missing googleId in user profile');
+        return res.redirect(`${redirectUrl}?error=missing_google_id`);
+      }
+      if (!req.user.email) {
+        logger.error('Google callback missing email in user profile');
+        return res.redirect(`${redirectUrl}?error=missing_email`);
+      }
+
       const result = await this.authService.validateGoogleUser({
-        googleId: req.user.googleId!,
+        googleId: req.user.googleId,
         email: req.user.email,
-        name: req.user.name!,
+        name: req.user.name || '',
         avatar: req.user.avatar,
       });
 
+      logger.log(
+        `Google user validated — userId=${result.user.id}, setting auth cookie`,
+      );
       this.authCookieService.setAuthCookie(res, result.access_token);
 
-      return res.redirect(`${this.authCookieService.redirectUrl}?refresh=1`);
-    } catch {
-      return res.redirect(`${this.authCookieService.redirectUrl}`);
+      logger.log(`Redirecting to frontend: ${redirectUrl}?refresh=1`);
+      return res.redirect(`${redirectUrl}?refresh=1`);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+      const errorStack = error instanceof Error ? error.stack : '';
+      logger.error(`Google auth failed — ${errorMessage}`, errorStack);
+      return res.redirect(`${redirectUrl}?error=auth_failed`);
     }
   }
 }

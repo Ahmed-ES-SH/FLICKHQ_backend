@@ -25,8 +25,7 @@ export class AuthCookieService {
     this.isProduction =
       this.configService.get<string>('NODE_ENV') === 'production';
     this.frontendUrl =
-      this.configService.get<string>('FRONTEND_URL') ??
-      'http://localhost:3000';
+      this.configService.get<string>('FRONTEND_URL') ?? 'http://localhost:3000';
   }
 
   /**

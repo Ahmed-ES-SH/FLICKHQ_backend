@@ -301,15 +301,24 @@ export class AuthService {
     access_token: string;
     user: User;
   }> {
-    if (!email) throw new UnauthorizedException('No email from Google');
+    this.logger.log(`validateGoogleUser called — googleId=${googleId}, email=${email}, name=${name}`);
 
+    if (!email) {
+      this.logger.warn('validateGoogleUser failed — no email from Google');
+      throw new UnauthorizedException('No email from Google');
+    }
+
+    this.logger.log(`Looking up user by googleId=${googleId}`);
     let user = await this.userRepo.findOne({
       where: { googleId },
     });
 
     if (!user) {
+      this.logger.log(`No user found by googleId, looking up by email=${email}`);
       user = await this.userRepo.findOne({ where: { email } });
+
       if (user) {
+        this.logger.log(`Existing user found by email=${email}, linking Google account googleId=${googleId}`);
         // Existing user without Google link — link the account
         user.googleId = googleId;
         if (!user.avatar && avatar) {
@@ -317,28 +326,40 @@ export class AuthService {
         }
         user.isEmailVerified = true;
         user = await this.userRepo.save(user);
+        this.logger.log(`Google account linked to existing user id=${user.id}`);
       } else {
+        this.logger.log(`No existing user found, creating new user with email=${email}, name=${name}`);
         // New user — create with explicit role
+        const uniqueName = await this.userService.getUniqueName(name);
+        this.logger.log(`Generated unique name: ${uniqueName}`);
         user = await this.userRepo.save({
           email,
           googleId,
-          name: await this.userService.getUniqueName(name),
+          name: uniqueName,
           avatar: avatar ?? undefined,
           isEmailVerified: true,
           role: UserRoleEnum.USER,
         });
+        this.logger.log(`New user created with id=${user.id}, name=${uniqueName}`);
       }
 
       if (!user) {
+        this.logger.error('validateGoogleUser — user creation returned null/undefined');
         throw new BadRequestException('Failed to create user');
       }
 
+      this.logger.log(`Ensuring system lists for user id=${user.id}`);
       await this.listsService.ensureSystemLists(user.id);
+      this.logger.log(`System lists ensured for user id=${user.id}`);
+    } else {
+      this.logger.log(`User found by googleId=${googleId}, existing user id=${user.id}`);
     }
 
     const payload = { id: user.id, email: user.email, role: user.role };
+    this.logger.log(`Signing JWT for user id=${user.id}, email=${user.email}`);
     const access_token = await this.jwtService.signAsync(payload);
 
+    this.logger.log(`validateGoogleUser completed successfully for user id=${user.id}`);
     return { access_token, user };
   }
 
