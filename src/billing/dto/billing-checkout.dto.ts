@@ -241,6 +241,8 @@ export class CreateSubscriptionFromPaymentDto {
       'The PaymentIntent ID (pi_*) returned by POST /api/billing/checkout/embedded-elements. Must be in succeeded status.',
     example: 'pi_3RabcDEFghijklmn',
   })
+  @IsString()
+  @IsNotEmpty()
   paymentIntentId: string;
 }
 

@@ -49,8 +49,10 @@ import { BillingPrice } from '../entities/billing-price.entity';
 import { BillingPlan } from '../entities/billing-plan.entity';
 import { BillingCatalogService } from './billing-catalog.service';
 import { BillingCustomerService } from './billing-customer.service';
+import { BillingEntitlementsService } from './billing-entitlements.service';
 import { BillingIdempotencyService } from './billing-idempotency.service';
 import { BillingStripeService } from './billing-stripe.service';
+import { User } from '../../user/schema/user.entity';
 import {
   BillingPaymentStatus,
   BillingPlanStatus,
@@ -146,6 +148,7 @@ export class BillingCheckoutService {
     private readonly planRepository: Repository<BillingPlan>,
     private readonly catalog: BillingCatalogService,
     private readonly customerService: BillingCustomerService,
+    private readonly entitlementsService: BillingEntitlementsService,
     private readonly stripeService: BillingStripeService,
     private readonly idempotency: BillingIdempotencyService,
     private readonly config: ConfigService,
@@ -300,55 +303,28 @@ export class BillingCheckoutService {
     this.assertPriceType(price, BillingPriceType.RECURRING, input.priceId);
     await this.assertPricePlanSellable(price.planId);
 
-    await this.assertNoActiveSubscription(input.userId);
-
     const customer = await this.customerService.getOrCreateForUser(
       input.userId,
     );
 
+    // Lock User row, check for active subscriptions (expiring any
+    // abandoned placeholder shells older than 30 min), then create
+    // payment + subscription shell atomically. The pessimistic lock
+    // serializes concurrent checkout attempts for this user.
+    const { payment, subscription } =
+      await this.lockAndCreateSubscriptionCheckout(
+        input.userId,
+        customer.id,
+        price,
+        input,
+      );
+
     const successUrl = this.requireConfig('STRIPE_SUCCESS_URL');
     const cancelUrl = this.requireConfig('STRIPE_CANCEL_URL');
 
-    let payment: BillingPayment | null = null;
-    let subscription: BillingSubscription | null = null;
+    let paymentRef: BillingPayment = payment;
+    let subscriptionRef: BillingSubscription = subscription;
     try {
-      payment = this.paymentRepository.create({
-        userId: input.userId,
-        billingCustomerId: customer.id,
-        priceId: price.id,
-        amount: price.unitAmount * input.quantity,
-        currency: price.currency,
-        status: BillingPaymentStatus.CHECKOUT_CREATED,
-        description: this.buildSubscriptionDescription(price),
-        metadata: {
-          source: 'checkout',
-          kind: 'subscription',
-          allowPromotionCodes: input.allowPromotionCodes,
-          quantity: input.quantity,
-          clientReferenceId: input.clientReferenceId ?? null,
-          trialDays: input.trialDays ?? null,
-        },
-      });
-      payment = await this.paymentRepository.save(payment);
-
-      const placeholderSubscriptionId = `${SUBSCRIPTION_PENDING_PREFIX}${payment.id}`;
-
-      subscription = this.subscriptionRepository.create({
-        userId: input.userId,
-        billingCustomerId: customer.id,
-        planId: price.planId,
-        priceId: price.id,
-        stripeSubscriptionId: placeholderSubscriptionId,
-        stripeCheckoutSessionId: null,
-        status: BillingSubscriptionStatus.INCOMPLETE,
-        metadata: {
-          source: 'checkout',
-          localPaymentId: payment.id,
-          clientReferenceId: input.clientReferenceId ?? null,
-          trialDays: input.trialDays ?? null,
-        },
-      });
-      subscription = await this.subscriptionRepository.save(subscription);
 
       const isEmbedded = input.uiMode === 'embedded_page';
 
@@ -361,18 +337,18 @@ export class BillingCheckoutService {
             quantity: input.quantity,
           },
         ],
-        client_reference_id: input.clientReferenceId ?? subscription.id,
+        client_reference_id: input.clientReferenceId ?? subscriptionRef.id,
         metadata: {
-          localPaymentId: payment.id,
-          localSubscriptionId: subscription.id,
+          localPaymentId: paymentRef.id,
+          localSubscriptionId: subscriptionRef.id,
           localPriceId: price.id,
           billingCustomerId: customer.id,
           userId: String(input.userId),
         },
         subscription_data: {
           metadata: {
-            localPaymentId: payment.id,
-            localSubscriptionId: subscription.id,
+            localPaymentId: paymentRef.id,
+            localSubscriptionId: subscriptionRef.id,
             localPriceId: price.id,
             billingCustomerId: customer.id,
             userId: String(input.userId),
@@ -397,17 +373,17 @@ export class BillingCheckoutService {
         this.stripeService.getClient().checkout.sessions.create(sessionParams),
       );
 
-      payment.stripeCheckoutSessionId = session.id;
-      subscription.stripeCheckoutSessionId = session.id;
-      await this.paymentRepository.save(payment);
-      await this.subscriptionRepository.save(subscription);
+      paymentRef.stripeCheckoutSessionId = session.id;
+      subscriptionRef.stripeCheckoutSessionId = session.id;
+      await this.paymentRepository.save(paymentRef);
+      await this.subscriptionRepository.save(subscriptionRef);
 
       this.eventEmitter.emit(BILLING_EVENTS.CHECKOUT_CREATED, {
         kind: 'subscription',
         userId: input.userId,
         billingCustomerId: customer.id,
-        localPaymentId: payment.id,
-        localSubscriptionId: subscription.id,
+        localPaymentId: paymentRef.id,
+        localSubscriptionId: subscriptionRef.id,
         sessionId: session.id,
       });
 
@@ -429,10 +405,10 @@ export class BillingCheckoutService {
       // If we created a subscription shell but the Stripe call
       // failed, mark the shell as expired so it does not show up
       // as an in-flight subscription on the user's account.
-      if (subscription) {
+      if (subscriptionRef) {
         try {
-          subscription.status = BillingSubscriptionStatus.INCOMPLETE_EXPIRED;
-          await this.subscriptionRepository.save(subscription);
+          subscriptionRef.status = BillingSubscriptionStatus.INCOMPLETE_EXPIRED;
+          await this.subscriptionRepository.save(subscriptionRef);
         } catch (cleanupErr) {
           this.logger.warn(
             `Failed to mark subscription shell ${subscription.id} as expired: ${
@@ -482,11 +458,11 @@ export class BillingCheckoutService {
     const price = await this.loadAndValidatePrice(input.priceId);
     this.assertPriceType(price, BillingPriceType.RECURRING, input.priceId);
     await this.assertPricePlanSellable(price.planId);
-    await this.assertNoActiveSubscription(input.userId);
-
     const customer = await this.customerService.getOrCreateForUser(
       input.userId,
     );
+
+    await this.lockAndAssertNoActiveSubscription(input.userId);
 
     let payment: BillingPayment | null = null;
     try {
@@ -633,8 +609,8 @@ export class BillingCheckoutService {
         input.userId,
       );
 
-      // 5. Check no active subscription (race condition protection)
-      await this.assertNoActiveSubscription(input.userId);
+      // 5. Check no active subscription under pessimistic lock
+      await this.lockAndAssertNoActiveSubscription(input.userId);
 
       // 6. Create the subscription on Stripe
       const subscription = await this.stripeService.safeCall(() =>
@@ -695,6 +671,12 @@ export class BillingCheckoutService {
       localPayment.status = BillingPaymentStatus.SUCCEEDED;
       localPayment.stripeCheckoutSessionId = null; // Not used in this flow
       await this.paymentRepository.save(localPayment);
+
+      // 9. Recompute entitlements immediately from the just-created
+      //    BillingSubscription. This ensures the user gets feature
+      //    access even if the customer.subscription.created webhook
+      //    arrives before our local row is committed.
+      await this.entitlementsService.recomputeForUser(input.userId);
 
       this.eventEmitter.emit(BILLING_EVENTS.SUBSCRIPTION_CREATED, {
         userId: input.userId,
@@ -779,23 +761,141 @@ export class BillingCheckoutService {
     }
   }
 
-  private async assertNoActiveSubscription(userId: number): Promise<void> {
-    const existing = await this.subscriptionRepository.findOne({
-      where: {
-        userId,
-        status: In(ACTIVE_SUBSCRIPTION_STATES),
-      },
-    });
-    if (
-      existing &&
-      !this.isPlaceholderSubscriptionId(existing.stripeSubscriptionId)
-    ) {
-      throw new ConflictException(
-        `User ${userId} already has an active subscription ` +
-          `(status=${existing.status}, id=${existing.id}). ` +
-          `Use the Customer Portal to manage the existing subscription.`,
+  private async lockAndAssertNoActiveSubscription(
+    userId: number,
+  ): Promise<void> {
+    await this.subscriptionRepository.manager.transaction(async (manager) => {
+      const user = await manager.getRepository(User).findOne({
+        where: { id: userId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!user) {
+        throw new Error(
+          `User ${userId} not found while checking subscriptions`,
+        );
+      }
+
+      const existing = await manager
+        .getRepository(BillingSubscription)
+        .findOne({
+          where: { userId, status: In(ACTIVE_SUBSCRIPTION_STATES) },
+        });
+      if (!existing) return;
+
+      if (!this.isPlaceholderSubscriptionId(existing.stripeSubscriptionId)) {
+        throw new ConflictException(
+          `User ${userId} already has an active subscription ` +
+            `(status=${existing.status}, id=${existing.id}). ` +
+            `Use the Customer Portal to manage the existing subscription.`,
+        );
+      }
+
+      const GRACE_MS = 30 * 60 * 1000;
+      const age = Date.now() - existing.createdAt.getTime();
+      if (age < GRACE_MS) {
+        throw new ConflictException(
+          `A subscription checkout is already in progress for user ${userId}. ` +
+            `Please wait and try again.`,
+        );
+      }
+
+      this.logger.warn(
+        `Expiring abandoned checkout shell ${existing.id} ` +
+          `(age=${Math.round(age / 1000)}s) for user ${userId}`,
       );
-    }
+      existing.status = BillingSubscriptionStatus.INCOMPLETE_EXPIRED;
+      await manager.getRepository(BillingSubscription).save(existing);
+    });
+  }
+
+  private async lockAndCreateSubscriptionCheckout(
+    userId: number,
+    billingCustomerId: string,
+    price: BillingPrice,
+    input: BillingCheckoutSubscriptionInput,
+  ): Promise<{ payment: BillingPayment; subscription: BillingSubscription }> {
+    return await this.subscriptionRepository.manager.transaction(
+      async (manager) => {
+        const user = await manager.getRepository(User).findOne({
+          where: { id: userId },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!user) {
+          throw new Error(
+            `User ${userId} not found while creating subscription checkout`,
+          );
+        }
+
+        const existing = await manager
+          .getRepository(BillingSubscription)
+          .findOne({
+            where: { userId, status: In(ACTIVE_SUBSCRIPTION_STATES) },
+          });
+        if (existing) {
+          if (
+            !this.isPlaceholderSubscriptionId(existing.stripeSubscriptionId)
+          ) {
+            throw new ConflictException(
+              `User ${userId} already has an active subscription ` +
+                `(status=${existing.status}, id=${existing.id}).`,
+            );
+          }
+          const GRACE_MS = 30 * 60 * 1000;
+          const age = Date.now() - existing.createdAt.getTime();
+          if (age < GRACE_MS) {
+            throw new ConflictException(
+              `A subscription checkout is already in progress for user ${userId}.`,
+            );
+          }
+          this.logger.warn(
+            `Expiring abandoned checkout shell ${existing.id} ` +
+              `(age=${Math.round(age / 1000)}s) for user ${userId}`,
+          );
+          existing.status = BillingSubscriptionStatus.INCOMPLETE_EXPIRED;
+          await manager.getRepository(BillingSubscription).save(existing);
+        }
+
+        const payment = manager.getRepository(BillingPayment).create({
+          userId,
+          billingCustomerId,
+          priceId: price.id,
+          amount: price.unitAmount * input.quantity,
+          currency: price.currency,
+          status: BillingPaymentStatus.CHECKOUT_CREATED,
+          description: this.buildSubscriptionDescription(price),
+          metadata: {
+            source: 'checkout',
+            kind: 'subscription',
+            allowPromotionCodes: input.allowPromotionCodes,
+            quantity: input.quantity,
+            clientReferenceId: input.clientReferenceId ?? null,
+            trialDays: input.trialDays ?? null,
+          },
+        });
+        await manager.getRepository(BillingPayment).save(payment);
+
+        const placeholderSubscriptionId = `${SUBSCRIPTION_PENDING_PREFIX}${payment.id}`;
+
+        const subscription = manager.getRepository(BillingSubscription).create({
+          userId,
+          billingCustomerId,
+          planId: price.planId,
+          priceId: price.id,
+          stripeSubscriptionId: placeholderSubscriptionId,
+          stripeCheckoutSessionId: null,
+          status: BillingSubscriptionStatus.INCOMPLETE,
+          metadata: {
+            source: 'checkout',
+            localPaymentId: payment.id,
+            clientReferenceId: input.clientReferenceId ?? null,
+            trialDays: input.trialDays ?? null,
+          },
+        });
+        await manager.getRepository(BillingSubscription).save(subscription);
+
+        return { payment, subscription };
+      },
+    );
   }
 
   private requireConfig(name: string): string {
