@@ -114,10 +114,6 @@ export class AuthPublicController {
     const logger = new Logger('GoogleAuthRedirect');
     const redirectUrl = this.authCookieService.redirectUrl;
 
-    logger.log(
-      `Google callback received — googleId=${req.user.googleId}, email=${req.user.email}, name=${req.user.name}`,
-    );
-
     try {
       if (!req.user.googleId) {
         logger.error('Google callback missing googleId in user profile');
@@ -135,13 +131,9 @@ export class AuthPublicController {
         avatar: req.user.avatar,
       });
 
-      logger.log(
-        `Google user validated — userId=${result.user.id}, setting auth cookie`,
+      return res.redirect(
+        `${redirectUrl}/auth/google/callback?t=${result.access_token}`,
       );
-      this.authCookieService.setAuthCookie(res, result.access_token);
-
-      logger.log(`Redirecting to frontend: ${redirectUrl}?refresh=1`);
-      return res.redirect(`${redirectUrl}?refresh=1`);
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
