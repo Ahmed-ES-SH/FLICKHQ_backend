@@ -31,6 +31,23 @@ import { BillingSubscriptionStatus } from '../billing/common/billing.enums';
 const JWT_EXPIRY_HOURS = 24;
 const BLACKLIST_BUFFER_HOURS = 24;
 
+const FREE_PLAN = {
+  code: 'free',
+  name: 'Free',
+  description:
+    'Get started with basic access. Browse the catalog, build a watchlist, and enjoy ad-supported streaming in standard definition.',
+  features: [
+    'browse_catalog',
+    'search_limited',
+    'streaming_sd',
+    'ads_supported',
+    'watchlist_1',
+    'no_offline_downloads',
+  ],
+  icon: '🎬',
+  highlight: false,
+};
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -46,8 +63,6 @@ export class AuthService {
     private readonly blackListRepo: Repository<BlackList>,
     @InjectRepository(BillingSubscription)
     private readonly billingSubscriptionRepo: Repository<BillingSubscription>,
-    @InjectRepository(BillingPlan)
-    private readonly billingPlanRepo: Repository<BillingPlan>,
   ) {}
 
   // MARK: Authentication — login / logout
@@ -126,22 +141,8 @@ export class AuthService {
         canceledAt: activeSubscription.canceledAt,
       };
     } else {
-      const freePlan = await this.billingPlanRepo.findOne({
-        where: { code: 'free' },
-      });
-
       subscription = {
-        plan: freePlan
-          ? {
-              id: freePlan.id,
-              code: freePlan.code,
-              name: freePlan.name,
-              description: freePlan.description,
-              features: freePlan.features,
-              icon: freePlan.icon,
-              highlight: freePlan.highlight,
-            }
-          : { code: 'free', name: 'Free' },
+        plan: FREE_PLAN,
         status: 'free',
       };
     }
@@ -301,7 +302,9 @@ export class AuthService {
     access_token: string;
     user: User;
   }> {
-    this.logger.log(`validateGoogleUser called — googleId=${googleId}, email=${email}, name=${name}`);
+    this.logger.log(
+      `validateGoogleUser called — googleId=${googleId}, email=${email}, name=${name}`,
+    );
 
     if (!email) {
       this.logger.warn('validateGoogleUser failed — no email from Google');
@@ -314,11 +317,15 @@ export class AuthService {
     });
 
     if (!user) {
-      this.logger.log(`No user found by googleId, looking up by email=${email}`);
+      this.logger.log(
+        `No user found by googleId, looking up by email=${email}`,
+      );
       user = await this.userRepo.findOne({ where: { email } });
 
       if (user) {
-        this.logger.log(`Existing user found by email=${email}, linking Google account googleId=${googleId}`);
+        this.logger.log(
+          `Existing user found by email=${email}, linking Google account googleId=${googleId}`,
+        );
         // Existing user without Google link — link the account
         user.googleId = googleId;
         if (!user.avatar && avatar) {
@@ -328,7 +335,9 @@ export class AuthService {
         user = await this.userRepo.save(user);
         this.logger.log(`Google account linked to existing user id=${user.id}`);
       } else {
-        this.logger.log(`No existing user found, creating new user with email=${email}, name=${name}`);
+        this.logger.log(
+          `No existing user found, creating new user with email=${email}, name=${name}`,
+        );
         // New user — create with explicit role
         const uniqueName = await this.userService.getUniqueName(name);
         this.logger.log(`Generated unique name: ${uniqueName}`);
@@ -340,11 +349,15 @@ export class AuthService {
           isEmailVerified: true,
           role: UserRoleEnum.USER,
         });
-        this.logger.log(`New user created with id=${user.id}, name=${uniqueName}`);
+        this.logger.log(
+          `New user created with id=${user.id}, name=${uniqueName}`,
+        );
       }
 
       if (!user) {
-        this.logger.error('validateGoogleUser — user creation returned null/undefined');
+        this.logger.error(
+          'validateGoogleUser — user creation returned null/undefined',
+        );
         throw new BadRequestException('Failed to create user');
       }
 
@@ -352,14 +365,18 @@ export class AuthService {
       await this.listsService.ensureSystemLists(user.id);
       this.logger.log(`System lists ensured for user id=${user.id}`);
     } else {
-      this.logger.log(`User found by googleId=${googleId}, existing user id=${user.id}`);
+      this.logger.log(
+        `User found by googleId=${googleId}, existing user id=${user.id}`,
+      );
     }
 
     const payload = { id: user.id, email: user.email, role: user.role };
     this.logger.log(`Signing JWT for user id=${user.id}, email=${user.email}`);
     const access_token = await this.jwtService.signAsync(payload);
 
-    this.logger.log(`validateGoogleUser completed successfully for user id=${user.id}`);
+    this.logger.log(
+      `validateGoogleUser completed successfully for user id=${user.id}`,
+    );
     return { access_token, user };
   }
 
@@ -381,60 +398,13 @@ export class AuthService {
 
     if (!user) throw new BadRequestException('User not found');
 
-    const activeSubscription = await this.billingSubscriptionRepo.findOne({
-      where: [
-        { userId, status: BillingSubscriptionStatus.ACTIVE },
-        { userId, status: BillingSubscriptionStatus.TRIALING },
-        { userId, status: BillingSubscriptionStatus.PAST_DUE },
-      ],
-      relations: ['plan', 'price'],
-      order: { createdAt: 'DESC' },
-    });
-
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password, ...userWithoutPassword } = user;
-
-    if (activeSubscription?.plan) {
-      return {
-        user: userWithoutPassword,
-        subscription: {
-          plan: {
-            id: activeSubscription.plan.id,
-            code: activeSubscription.plan.code,
-            name: activeSubscription.plan.name,
-            description: activeSubscription.plan.description,
-            features: activeSubscription.plan.features,
-            icon: activeSubscription.plan.icon,
-            highlight: activeSubscription.plan.highlight,
-          },
-          status: activeSubscription.status,
-          periodStart: activeSubscription.currentPeriodStart,
-          periodEnd: activeSubscription.currentPeriodEnd,
-          trialEnd: activeSubscription.trialEnd,
-          cancelAtPeriodEnd: activeSubscription.cancelAtPeriodEnd,
-          canceledAt: activeSubscription.canceledAt,
-        },
-      };
-    }
-
-    const freePlan = await this.billingPlanRepo.findOne({
-      where: { code: 'free' },
-    });
 
     return {
       user: userWithoutPassword,
       subscription: {
-        plan: freePlan
-          ? {
-              id: freePlan.id,
-              code: freePlan.code,
-              name: freePlan.name,
-              description: freePlan.description,
-              features: freePlan.features,
-              icon: freePlan.icon,
-              highlight: freePlan.highlight,
-            }
-          : { code: 'free', name: 'Free' },
+        plan: FREE_PLAN,
         status: 'free',
       },
     };
