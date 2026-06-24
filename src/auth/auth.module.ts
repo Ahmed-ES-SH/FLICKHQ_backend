@@ -17,9 +17,7 @@ import { AuthCookieService } from './auth-cookie.service';
 import { BlackList } from './schema/blacklist-tokens.schema';
 import { AuthPublicController } from './auth.public.controller';
 import { ListsModule } from '../modules/lists/lists.module';
-import { BillingSubscription } from '../billing/entities/billing-subscription.entity';
 import { BillingPlan } from '../billing/entities/billing-plan.entity';
-import { BillingPrice } from '../billing/entities/billing-price.entity';
 
 // JWT Options
 function ReturnJWTOptions(config: ConfigService) {
@@ -43,7 +41,7 @@ const JWT_OPTIONS = {
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, BlackList, BillingSubscription, BillingPlan, BillingPrice]),
+    TypeOrmModule.forFeature([User, BlackList, BillingPlan]),
     JwtModule.registerAsync(JWT_OPTIONS),
     MailModule,
     ConfigModule,

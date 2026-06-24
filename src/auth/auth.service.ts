@@ -23,9 +23,7 @@ import { SendResetPasswordDto } from './dto/send-reset-password.dto';
 import { BlackList } from './schema/blacklist-tokens.schema';
 import { UserRoleEnum } from './types/UserRoleEnum';
 import { ListsService } from '../modules/lists/lists.service';
-import { BillingSubscription } from '../billing/entities/billing-subscription.entity';
 import { BillingPlan } from '../billing/entities/billing-plan.entity';
-import { BillingSubscriptionStatus } from '../billing/common/billing.enums';
 
 // JWT expiry in hours — used to set blacklist token TTL
 const JWT_EXPIRY_HOURS = 24;
@@ -61,8 +59,6 @@ export class AuthService {
     private readonly userRepo: Repository<User>,
     @InjectRepository(BlackList)
     private readonly blackListRepo: Repository<BlackList>,
-    @InjectRepository(BillingSubscription)
-    private readonly billingSubscriptionRepo: Repository<BillingSubscription>,
   ) {}
 
   // MARK: Authentication — login / logout
@@ -102,50 +98,10 @@ export class AuthService {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password, ...userWithoutPassword } = user;
 
-    const activeSubscription = await this.billingSubscriptionRepo.findOne({
-      where: [
-        { userId: user.id, status: BillingSubscriptionStatus.ACTIVE },
-        { userId: user.id, status: BillingSubscriptionStatus.TRIALING },
-        { userId: user.id, status: BillingSubscriptionStatus.PAST_DUE },
-      ],
-      relations: ['plan', 'price'],
-      order: { createdAt: 'DESC' },
-    });
-
-    let subscription: {
-      plan: Partial<BillingPlan> & { code: string; name: string };
-      status: string;
-      periodStart?: Date | null;
-      periodEnd?: Date | null;
-      trialEnd?: Date | null;
-      cancelAtPeriodEnd?: boolean;
-      canceledAt?: Date | null;
+    const subscription = {
+      plan: FREE_PLAN,
+      status: 'free',
     };
-
-    if (activeSubscription?.plan) {
-      subscription = {
-        plan: {
-          id: activeSubscription.plan.id,
-          code: activeSubscription.plan.code,
-          name: activeSubscription.plan.name,
-          description: activeSubscription.plan.description,
-          features: activeSubscription.plan.features,
-          icon: activeSubscription.plan.icon,
-          highlight: activeSubscription.plan.highlight,
-        },
-        status: activeSubscription.status,
-        periodStart: activeSubscription.currentPeriodStart,
-        periodEnd: activeSubscription.currentPeriodEnd,
-        trialEnd: activeSubscription.trialEnd,
-        cancelAtPeriodEnd: activeSubscription.cancelAtPeriodEnd,
-        canceledAt: activeSubscription.canceledAt,
-      };
-    } else {
-      subscription = {
-        plan: FREE_PLAN,
-        status: 'free',
-      };
-    }
 
     return { user: userWithoutPassword, access_token: token, subscription };
   }
